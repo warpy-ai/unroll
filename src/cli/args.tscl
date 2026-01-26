@@ -57,6 +57,9 @@ function showHelp(): void {
     console.log("");
     console.log("    Build & Run:");
     console.log("        build            Build the project");
+    console.log("            --release        Build in release mode");
+    console.log("            --dist           Build for distribution (full LTO)");
+    console.log("            --no-std         Disable implicit @rolls/std prelude");
     console.log("        run              Build and run");
     console.log("        watch            Watch for changes and rebuild");
     console.log("        clean            Remove build artifacts");

@@ -15,6 +15,7 @@ interface BuildOptions {
     target: string;
     jobs: number;
     verbose: boolean;
+    noStd: boolean;  // Disable implicit @rolls/std prelude
 }
 
 function parseBuildArgs(args: string[]): BuildOptions {
@@ -23,7 +24,8 @@ function parseBuildArgs(args: string[]): BuildOptions {
         dist: false,
         target: "native",
         jobs: 0,  // 0 = auto-detect
-        verbose: false
+        verbose: false,
+        noStd: false
     };
 
     let i = 0;
@@ -47,6 +49,8 @@ function parseBuildArgs(args: string[]): BuildOptions {
             }
         } else if (arg == "--verbose" || arg == "-v") {
             options.verbose = true;
+        } else if (arg == "--no-std") {
+            options.noStd = true;
         }
 
         i = i + 1;

@@ -15,9 +15,29 @@ interface DependencyNode {
     dependencies: DependencyNode[];
 }
 
-function resolveDependencies(manifest: Manifest): ResolveResult {
+// The implicit standard library dependency
+const STD_DEPENDENCY: Dependency = {
+    name: "@rolls/std",
+    version: "0.1",
+    optional: false,
+    features: [],
+    git: "",
+    branch: "",
+    path: ""
+};
+
+function resolveDependencies(manifest: Manifest, noStd: boolean = false): ResolveResult {
     let resolved: LockedPackage[] = [];
     let visited: string[] = [];
+
+    // Inject @rolls/std implicitly unless disabled
+    // This is the prelude that provides standard library functions automatically
+    if (!manifest.noStd && !noStd) {
+        let stdResult = resolveSingle(STD_DEPENDENCY, visited, resolved);
+        if (stdResult.error != "") {
+            return { packages: [], error: stdResult.error };
+        }
+    }
 
     // Resolve all direct dependencies
     let i = 0;

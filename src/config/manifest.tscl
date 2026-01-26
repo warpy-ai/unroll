@@ -14,6 +14,8 @@ interface Manifest {
     features: Feature[];
     build: BuildConfig;
     profiles: Profile[];
+    // If true, the implicit @rolls/std prelude is not included
+    noStd: boolean;
 }
 
 interface Dependency {
@@ -114,7 +116,8 @@ function parseToml(content: string): Manifest {
             optimization: "release",
             lto: true
         },
-        profiles: []
+        profiles: [],
+        noStd: false
     };
 
     let lines = content.split("\n");
@@ -159,6 +162,7 @@ function parseToml(content: string): Manifest {
                 else if (key == "license") manifest.license = value;
                 else if (key == "description") manifest.description = value;
                 else if (key == "repository") manifest.repository = value;
+                else if (key == "no-std") manifest.noStd = value == "true";
             } else if (currentSection == "dependencies") {
                 manifest.dependencies.push(parseDependency(key, value));
             } else if (currentSection == "dev-dependencies") {

@@ -5,6 +5,7 @@ This document describes the `unroll.toml` manifest file format used to configure
 ## Overview
 
 Every Unroll project contains an `unroll.toml` file at its root. This file defines:
+
 - Package metadata
 - Dependencies
 - Build configuration
@@ -32,6 +33,28 @@ authors = ["Name <email@example.com>"]
 readme = "README.md"                # Readme file path
 include = ["src/**/*"]              # Files to include in package
 exclude = ["tests/**/*"]            # Files to exclude from package
+no-std = false                      # Disable implicit @rolls/std prelude
+```
+
+#### Standard Library Prelude
+
+By default, all Script projects implicitly include `@rolls/std`, which provides commonly used functions from the standard library (string manipulation, array methods, math, JSON, etc.). This is similar to Rust's prelude.
+
+To disable the implicit prelude:
+
+```toml
+[package]
+name = "my-embedded-app"
+no-std = true
+```
+
+Or use the compiler flag: `unroll build --no-std`
+
+When `no-std` is enabled, you must explicitly import everything you need:
+
+```javascript
+import { map, filter } from "@rolls/array";
+import { trim } from "@rolls/string";
 ```
 
 #### Package Types
@@ -80,15 +103,15 @@ Runtime dependencies.
 
 #### Version Requirements
 
-| Syntax | Meaning |
-|--------|---------|
-| `"0.1"` | `>=0.1.0, <0.2.0` (default) |
-| `"=0.1.5"` | Exactly 0.1.5 |
-| `">=0.1.5"` | Greater than or equal |
-| `"<0.2.0"` | Less than |
-| `">=0.1, <0.3"` | Range |
-| `"0.1.*"` | Any patch version |
-| `"*"` | Any version |
+| Syntax          | Meaning                     |
+| --------------- | --------------------------- |
+| `"0.1"`         | `>=0.1.0, <0.2.0` (default) |
+| `"=0.1.5"`      | Exactly 0.1.5               |
+| `">=0.1.5"`     | Greater than or equal       |
+| `"<0.2.0"`      | Less than                   |
+| `">=0.1, <0.3"` | Range                       |
+| `"0.1.*"`       | Any patch version           |
+| `"*"`           | Any version                 |
 
 ### [dev-dependencies]
 
@@ -128,6 +151,7 @@ http2 = ["dep:@rolls/h2"]
 ```
 
 Usage in code:
+
 ```javascript
 // Feature-gated code
 #[cfg(feature = "json")]
@@ -172,22 +196,22 @@ strip = "all"               # Strip all metadata
 
 #### Optimization Levels
 
-| Level | Description |
-|-------|-------------|
-| `0` | No optimization (fastest compile) |
-| `1` | Basic optimization |
-| `2` | Standard optimization |
-| `3` | Maximum optimization |
-| `"s"` | Optimize for size |
-| `"z"` | Aggressively optimize for size |
+| Level | Description                       |
+| ----- | --------------------------------- |
+| `0`   | No optimization (fastest compile) |
+| `1`   | Basic optimization                |
+| `2`   | Standard optimization             |
+| `3`   | Maximum optimization              |
+| `"s"` | Optimize for size                 |
+| `"z"` | Aggressively optimize for size    |
 
 #### LTO Options
 
-| Value | Description |
-|-------|-------------|
-| `false` | No LTO |
-| `true` / `"thin"` | ThinLTO (parallel, faster) |
-| `"fat"` | Full LTO (slower, smaller binary) |
+| Value             | Description                       |
+| ----------------- | --------------------------------- |
+| `false`           | No LTO                            |
+| `true` / `"thin"` | ThinLTO (parallel, faster)        |
+| `"fat"`           | Full LTO (slower, smaller binary) |
 
 ### [workspace]
 
