@@ -1,0 +1,107 @@
+// Unroll - Package Manager and Build System for Script
+// Entry point for the CLI
+
+import { parseArgs, showHelp, showVersion } from "./cli/args.tscl";
+import { runNew } from "./cli/new.tscl";
+import { runInit } from "./cli/init.tscl";
+import { runAdd, runRemove, runUpdate } from "./cli/deps.tscl";
+import { runBuild, runRun, runWatch, runClean } from "./cli/build.tscl";
+import { runTest } from "./cli/test.tscl";
+import { runFmt } from "./cli/fmt.tscl";
+import { runLint } from "./cli/lint.tscl";
+import { runCheck } from "./cli/check.tscl";
+import { runDoc } from "./cli/doc.tscl";
+import { runSearch, runInfo, runPublish, runLogin } from "./cli/registry.tscl";
+
+const VERSION = "0.1.0";
+
+function main(args: string[]): number {
+    let parsed = parseArgs(args);
+
+    if (parsed.help) {
+        showHelp();
+        return 0;
+    }
+
+    if (parsed.version) {
+        showVersion(VERSION);
+        return 0;
+    }
+
+    let command = parsed.command;
+    let cmdArgs = parsed.args;
+
+    // Project management
+    if (command == "new") {
+        return runNew(cmdArgs);
+    }
+    if (command == "init") {
+        return runInit(cmdArgs);
+    }
+
+    // Dependency management
+    if (command == "add") {
+        return runAdd(cmdArgs);
+    }
+    if (command == "remove") {
+        return runRemove(cmdArgs);
+    }
+    if (command == "update") {
+        return runUpdate(cmdArgs);
+    }
+
+    // Build & run
+    if (command == "build") {
+        return runBuild(cmdArgs);
+    }
+    if (command == "run") {
+        return runRun(cmdArgs);
+    }
+    if (command == "watch") {
+        return runWatch(cmdArgs);
+    }
+    if (command == "clean") {
+        return runClean(cmdArgs);
+    }
+
+    // Testing
+    if (command == "test") {
+        return runTest(cmdArgs);
+    }
+
+    // Developer tools
+    if (command == "fmt") {
+        return runFmt(cmdArgs);
+    }
+    if (command == "lint") {
+        return runLint(cmdArgs);
+    }
+    if (command == "check") {
+        return runCheck(cmdArgs);
+    }
+    if (command == "doc") {
+        return runDoc(cmdArgs);
+    }
+
+    // Registry
+    if (command == "search") {
+        return runSearch(cmdArgs);
+    }
+    if (command == "info") {
+        return runInfo(cmdArgs);
+    }
+    if (command == "publish") {
+        return runPublish(cmdArgs);
+    }
+    if (command == "login") {
+        return runLogin(cmdArgs);
+    }
+
+    // Unknown command
+    console.error("Unknown command: " + command);
+    console.error("Run 'unroll --help' for usage");
+    return 1;
+}
+
+// Export for use as library
+export { main, VERSION };

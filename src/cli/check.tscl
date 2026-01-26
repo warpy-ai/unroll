@@ -1,0 +1,150 @@
+// unroll check - Type check project
+
+import { loadManifest } from "../config/manifest.tscl";
+import { loadLockfile } from "../config/lockfile.tscl";
+
+interface CheckOptions {
+    verbose: boolean;
+}
+
+function parseCheckArgs(args: string[]): CheckOptions {
+    let options: CheckOptions = {
+        verbose: false
+    };
+
+    let i = 0;
+    while (i < args.length) {
+        let arg = args[i];
+
+        if (arg == "--verbose" || arg == "-v") {
+            options.verbose = true;
+        }
+
+        i = i + 1;
+    }
+
+    return options;
+}
+
+function runCheck(args: string[]): number {
+    let options = parseCheckArgs(args);
+
+    // Load manifest
+    let manifest = loadManifest("./unroll.toml");
+    if (manifest == null) {
+        console.error("Error: could not find unroll.toml");
+        return 1;
+    }
+
+    console.log("Checking " + manifest.name + "...");
+
+    // Discover source files
+    let files = discoverSourceFiles("./src");
+    if (files.length == 0) {
+        console.log("No source files found");
+        return 0;
+    }
+
+    let totalErrors = 0;
+    let totalWarnings = 0;
+
+    // Type check each file
+    let i = 0;
+    while (i < files.length) {
+        let file = files[i];
+
+        if (options.verbose) {
+            console.log("Checking: " + file);
+        }
+
+        let result = typeCheckFile(file);
+
+        let j = 0;
+        while (j < result.errors.length) {
+            let error = result.errors[j];
+            printTypeError(file, error);
+            totalErrors = totalErrors + 1;
+            j = j + 1;
+        }
+
+        j = 0;
+        while (j < result.warnings.length) {
+            let warning = result.warnings[j];
+            printTypeWarning(file, warning);
+            totalWarnings = totalWarnings + 1;
+            j = j + 1;
+        }
+
+        i = i + 1;
+    }
+
+    // Summary
+    console.log("");
+    if (totalErrors > 0) {
+        console.log("Found " + totalErrors + " error(s), " + totalWarnings + " warning(s)");
+        return 1;
+    }
+
+    if (totalWarnings > 0) {
+        console.log("Found " + totalWarnings + " warning(s)");
+    } else {
+        console.log("No errors found");
+    }
+
+    return 0;
+}
+
+interface TypeError {
+    message: string;
+    line: number;
+    column: number;
+    code: string;
+}
+
+interface TypeCheckResult {
+    errors: TypeError[];
+    warnings: TypeError[];
+}
+
+function typeCheckFile(path: string): TypeCheckResult {
+    // Read file
+    let content = readFile(path);
+    if (content == null) {
+        return {
+            errors: [{
+                message: "Could not read file",
+                line: 0,
+                column: 0,
+                code: "E0001"
+            }],
+            warnings: []
+        };
+    }
+
+    // TODO: Implement actual type checking by calling Script compiler
+    // For now, return empty result
+    return {
+        errors: [],
+        warnings: []
+    };
+}
+
+function printTypeError(file: string, error: TypeError): void {
+    console.log(file + ":" + error.line + ":" + error.column + " error[" + error.code + "]: " + error.message);
+}
+
+function printTypeWarning(file: string, warning: TypeError): void {
+    console.log(file + ":" + warning.line + ":" + warning.column + " warning[" + warning.code + "]: " + warning.message);
+}
+
+function discoverSourceFiles(dir: string): string[] {
+    // TODO: Implement file discovery
+    return [];
+}
+
+function readFile(path: string): string | null {
+    // TODO: Implement file reading
+    return null;
+}
+
+export { runCheck, CheckOptions };

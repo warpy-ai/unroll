@@ -1,0 +1,133 @@
+// Registry client - HTTP client for package registry
+
+interface PackageVersion {
+    version: string;
+    checksum: string;
+    dependencies: VersionDependency[];
+    yanked: boolean;
+}
+
+interface VersionDependency {
+    name: string;
+    version: string;
+}
+
+interface FetchVersionsResult {
+    versions: PackageVersion[];
+    error: string;
+}
+
+function fetchPackageVersions(name: string): FetchVersionsResult {
+    let url = getRegistryUrl() + "/api/v1/packages/" + encodePackageName(name) + "/versions";
+
+    let response = httpGet(url);
+    if (response.error != "") {
+        return { versions: [], error: response.error };
+    }
+
+    // Parse JSON response
+    let versions = parseVersionsResponse(response.body);
+
+    return { versions: versions, error: "" };
+}
+
+interface DownloadResult {
+    data: string;
+    error: string;
+}
+
+function downloadPackage(name: string, version: string): DownloadResult {
+    let url = getRegistryUrl() + "/api/v1/packages/" + encodePackageName(name) + "/" + version + "/download";
+
+    let response = httpGet(url);
+    if (response.error != "") {
+        return { data: "", error: response.error };
+    }
+
+    return { data: response.body, error: "" };
+}
+
+interface PublishResult {
+    success: boolean;
+    error: string;
+}
+
+function publishPackage(name: string, version: string, tarball: string, token: string): PublishResult {
+    let url = getRegistryUrl() + "/api/v1/packages/" + encodePackageName(name) + "/" + version;
+
+    let response = httpPut(url, tarball, {
+        "Authorization": "Bearer " + token,
+        "Content-Type": "application/gzip"
+    });
+
+    if (response.statusCode != 200 && response.statusCode != 201) {
+        return { success: false, error: "HTTP " + response.statusCode + ": " + response.body };
+    }
+
+    return { success: true, error: "" };
+}
+
+function getRegistryUrl(): string {
+    // TODO: Read from config
+    return "https://rolls.script-lang.org";
+}
+
+function encodePackageName(name: string): string {
+    // Encode @ as %40 for scoped packages
+    let encoded = "";
+    let i = 0;
+    while (i < name.length) {
+        let c = name[i];
+        if (c == "@") {
+            encoded = encoded + "%40";
+        } else if (c == "/") {
+            encoded = encoded + "%2F";
+        } else {
+            encoded = encoded + c;
+        }
+        i = i + 1;
+    }
+    return encoded;
+}
+
+function parseVersionsResponse(body: string): PackageVersion[] {
+    // TODO: Implement JSON parsing
+    return [];
+}
+
+interface HttpResponse {
+    statusCode: number;
+    body: string;
+    error: string;
+}
+
+interface Headers {
+    [key: string]: string;
+}
+
+function httpGet(url: string): HttpResponse {
+    // TODO: Implement HTTP GET
+    return {
+        statusCode: 0,
+        body: "",
+        error: "HTTP client not implemented"
+    };
+}
+
+function httpPut(url: string, body: string, headers: Headers): HttpResponse {
+    // TODO: Implement HTTP PUT
+    return {
+        statusCode: 0,
+        body: "",
+        error: "HTTP client not implemented"
+    };
+}
+
+export {
+    PackageVersion,
+    VersionDependency,
+    FetchVersionsResult,
+    fetchPackageVersions,
+    downloadPackage,
+    publishPackage
+};

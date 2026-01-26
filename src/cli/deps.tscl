@@ -1,0 +1,279 @@
+// Dependency management commands: add, remove, update
+
+import { loadManifest, saveManifest, Manifest } from "../config/manifest.tscl";
+import { resolveDependencies } from "../resolver/mod.tscl";
+import { writeLockfile } from "../config/lockfile.tscl";
+
+// ============================================================================
+// unroll add
+// ============================================================================
+
+interface AddOptions {
+    packages: string[];
+    dev: boolean;
+    optional: boolean;
+    features: string[];
+}
+
+function parseAddArgs(args: string[]): AddOptions {
+    let options: AddOptions = {
+        packages: [],
+        dev: false,
+        optional: false,
+        features: []
+    };
+
+    let i = 0;
+    while (i < args.length) {
+        let arg = args[i];
+
+        if (arg == "--dev" || arg == "-D") {
+            options.dev = true;
+        } else if (arg == "--optional") {
+            options.optional = true;
+        } else if (arg == "--features") {
+            i = i + 1;
+            if (i < args.length) {
+                options.features = args[i].split(",");
+            }
+        } else if (arg[0] != "-") {
+            options.packages.push(arg);
+        }
+
+        i = i + 1;
+    }
+
+    return options;
+}
+
+function runAdd(args: string[]): number {
+    let options = parseAddArgs(args);
+
+    if (options.packages.length == 0) {
+        console.error("Error: no packages specified");
+        console.error("Usage: unroll add <package> [--dev] [--optional]");
+        return 1;
+    }
+
+    // Load current manifest
+    let manifest = loadManifest("./unroll.toml");
+    if (manifest == null) {
+        console.error("Error: could not find unroll.toml");
+        console.error("Run 'unroll init' to create a project");
+        return 1;
+    }
+
+    // Add each package
+    let i = 0;
+    while (i < options.packages.length) {
+        let pkg = options.packages[i];
+        let parsed = parsePackageSpec(pkg);
+
+        console.log("Adding " + parsed.name + "@" + parsed.version + "...");
+
+        // Add to appropriate section
+        if (options.dev) {
+            addDevDependency(manifest, parsed.name, parsed.version, options);
+        } else {
+            addDependency(manifest, parsed.name, parsed.version, options);
+        }
+
+        i = i + 1;
+    }
+
+    // Resolve dependencies
+    console.log("Resolving dependencies...");
+    let resolved = resolveDependencies(manifest);
+    if (resolved.error != "") {
+        console.error("Error resolving dependencies: " + resolved.error);
+        return 1;
+    }
+
+    // Save manifest and lockfile
+    let result = saveManifest("./unroll.toml", manifest);
+    if (!result.success) {
+        console.error("Error saving manifest: " + result.error);
+        return 1;
+    }
+
+    result = writeLockfile("./unroll.lock", resolved.packages);
+    if (!result.success) {
+        console.error("Error writing lockfile: " + result.error);
+        return 1;
+    }
+
+    console.log("Added " + options.packages.length + " package(s)");
+    return 0;
+}
+
+interface PackageSpec {
+    name: string;
+    version: string;
+}
+
+function parsePackageSpec(spec: string): PackageSpec {
+    // Handle @scope/name@version format
+    let atIndex = spec.lastIndexOf("@");
+
+    // If @ is at position 0, it's a scoped package, look for second @
+    if (atIndex == 0) {
+        let secondAt = spec.indexOf("@", 1);
+        if (secondAt > 0) {
+            return {
+                name: spec.substring(0, secondAt),
+                version: spec.substring(secondAt + 1)
+            };
+        }
+        return { name: spec, version: "*" };
+    }
+
+    if (atIndex > 0) {
+        return {
+            name: spec.substring(0, atIndex),
+            version: spec.substring(atIndex + 1)
+        };
+    }
+
+    return { name: spec, version: "*" };
+}
+
+function addDependency(manifest: Manifest, name: string, version: string, options: AddOptions): void {
+    // TODO: Implement
+}
+
+function addDevDependency(manifest: Manifest, name: string, version: string, options: AddOptions): void {
+    // TODO: Implement
+}
+
+// ============================================================================
+// unroll remove
+// ============================================================================
+
+interface RemoveOptions {
+    packages: string[];
+}
+
+function parseRemoveArgs(args: string[]): RemoveOptions {
+    let options: RemoveOptions = {
+        packages: []
+    };
+
+    let i = 0;
+    while (i < args.length) {
+        let arg = args[i];
+        if (arg[0] != "-") {
+            options.packages.push(arg);
+        }
+        i = i + 1;
+    }
+
+    return options;
+}
+
+function runRemove(args: string[]): number {
+    let options = parseRemoveArgs(args);
+
+    if (options.packages.length == 0) {
+        console.error("Error: no packages specified");
+        console.error("Usage: unroll remove <package>");
+        return 1;
+    }
+
+    // Load manifest
+    let manifest = loadManifest("./unroll.toml");
+    if (manifest == null) {
+        console.error("Error: could not find unroll.toml");
+        return 1;
+    }
+
+    // Remove each package
+    let i = 0;
+    while (i < options.packages.length) {
+        let pkg = options.packages[i];
+        console.log("Removing " + pkg + "...");
+        removeDependency(manifest, pkg);
+        i = i + 1;
+    }
+
+    // Re-resolve and save
+    let resolved = resolveDependencies(manifest);
+    saveManifest("./unroll.toml", manifest);
+    writeLockfile("./unroll.lock", resolved.packages);
+
+    console.log("Removed " + options.packages.length + " package(s)");
+    return 0;
+}
+
+function removeDependency(manifest: Manifest, name: string): void {
+    // TODO: Implement
+}
+
+// ============================================================================
+// unroll update
+// ============================================================================
+
+interface UpdateOptions {
+    packages: string[];
+    all: boolean;
+}
+
+function parseUpdateArgs(args: string[]): UpdateOptions {
+    let options: UpdateOptions = {
+        packages: [],
+        all: false
+    };
+
+    let i = 0;
+    while (i < args.length) {
+        let arg = args[i];
+        if (arg == "--all") {
+            options.all = true;
+        } else if (arg[0] != "-") {
+            options.packages.push(arg);
+        }
+        i = i + 1;
+    }
+
+    // If no packages specified, update all
+    if (options.packages.length == 0) {
+        options.all = true;
+    }
+
+    return options;
+}
+
+function runUpdate(args: string[]): number {
+    let options = parseUpdateArgs(args);
+
+    // Load manifest
+    let manifest = loadManifest("./unroll.toml");
+    if (manifest == null) {
+        console.error("Error: could not find unroll.toml");
+        return 1;
+    }
+
+    if (options.all) {
+        console.log("Updating all dependencies...");
+    } else {
+        console.log("Updating: " + options.packages.join(", "));
+    }
+
+    // Resolve with updates
+    let resolved = resolveDependencies(manifest);
+    if (resolved.error != "") {
+        console.error("Error resolving dependencies: " + resolved.error);
+        return 1;
+    }
+
+    // Write new lockfile
+    let result = writeLockfile("./unroll.lock", resolved.packages);
+    if (!result.success) {
+        console.error("Error writing lockfile: " + result.error);
+        return 1;
+    }
+
+    console.log("Updated dependencies");
+    return 0;
+}
+
+export { runAdd, runRemove, runUpdate };

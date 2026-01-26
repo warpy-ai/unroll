@@ -1,0 +1,272 @@
+// unroll doc - Generate documentation
+
+import { loadManifest } from "../config/manifest.tscl";
+
+interface DocOptions {
+    open: boolean;
+    private: boolean;
+    noDeps: boolean;
+}
+
+function parseDocArgs(args: string[]): DocOptions {
+    let options: DocOptions = {
+        open: false,
+        private: false,
+        noDeps: false
+    };
+
+    let i = 0;
+    while (i < args.length) {
+        let arg = args[i];
+
+        if (arg == "--open") {
+            options.open = true;
+        } else if (arg == "--document-private-items") {
+            options.private = true;
+        } else if (arg == "--no-deps") {
+            options.noDeps = true;
+        }
+
+        i = i + 1;
+    }
+
+    return options;
+}
+
+function runDoc(args: string[]): number {
+    let options = parseDocArgs(args);
+
+    // Load manifest
+    let manifest = loadManifest("./unroll.toml");
+    if (manifest == null) {
+        console.error("Error: could not find unroll.toml");
+        return 1;
+    }
+
+    console.log("Generating documentation for " + manifest.name + "...");
+
+    // Discover source files
+    let files = discoverSourceFiles("./src");
+
+    // Generate docs
+    let outputDir = "./target/doc";
+    let result = generateDocs(files, outputDir, options);
+
+    if (!result.success) {
+        console.error("Error generating docs: " + result.error);
+        return 1;
+    }
+
+    console.log("Documentation written to " + outputDir);
+
+    // Open in browser if requested
+    if (options.open) {
+        let indexPath = outputDir + "/index.html";
+        openInBrowser(indexPath);
+    }
+
+    return 0;
+}
+
+interface DocResult {
+    success: boolean;
+    error: string;
+}
+
+function generateDocs(files: string[], outputDir: string, options: DocOptions): DocResult {
+    // Create output directory
+    let result = createDirectory(outputDir);
+    if (!result.success) {
+        return result;
+    }
+
+    // Generate index.html
+    let indexContent = generateIndexPage(files);
+    writeFile(outputDir + "/index.html", indexContent);
+
+    // Generate page for each file
+    let i = 0;
+    while (i < files.length) {
+        let file = files[i];
+        let content = readFile(file);
+        if (content != null) {
+            let docContent = generateFileDocs(file, content, options.private);
+            let outputPath = outputDir + "/" + fileToHtmlPath(file);
+            writeFile(outputPath, docContent);
+        }
+        i = i + 1;
+    }
+
+    // Copy CSS
+    writeFile(outputDir + "/style.css", getStylesheet());
+
+    return { success: true, error: "" };
+}
+
+function generateIndexPage(files: string[]): string {
+    let html = "<!DOCTYPE html>\n";
+    html = html + "<html>\n<head>\n";
+    html = html + "<title>Documentation</title>\n";
+    html = html + "<link rel=\"stylesheet\" href=\"style.css\">\n";
+    html = html + "</head>\n<body>\n";
+    html = html + "<h1>Documentation</h1>\n";
+    html = html + "<h2>Modules</h2>\n";
+    html = html + "<ul>\n";
+
+    let i = 0;
+    while (i < files.length) {
+        let file = files[i];
+        let name = fileToModuleName(file);
+        let href = fileToHtmlPath(file);
+        html = html + "<li><a href=\"" + href + "\">" + name + "</a></li>\n";
+        i = i + 1;
+    }
+
+    html = html + "</ul>\n";
+    html = html + "</body>\n</html>\n";
+    return html;
+}
+
+function generateFileDocs(file: string, content: string, includePrivate: boolean): string {
+    let moduleName = fileToModuleName(file);
+
+    let html = "<!DOCTYPE html>\n";
+    html = html + "<html>\n<head>\n";
+    html = html + "<title>" + moduleName + "</title>\n";
+    html = html + "<link rel=\"stylesheet\" href=\"style.css\">\n";
+    html = html + "</head>\n<body>\n";
+    html = html + "<h1>" + moduleName + "</h1>\n";
+    html = html + "<p><a href=\"index.html\">Back to index</a></p>\n";
+
+    // Extract and render doc comments and exports
+    let exports = extractExports(content, includePrivate);
+
+    if (exports.functions.length > 0) {
+        html = html + "<h2>Functions</h2>\n";
+        let i = 0;
+        while (i < exports.functions.length) {
+            let fn = exports.functions[i];
+            html = html + "<div class=\"item\">\n";
+            html = html + "<h3>" + fn.name + "</h3>\n";
+            html = html + "<pre>" + fn.signature + "</pre>\n";
+            if (fn.doc != "") {
+                html = html + "<p>" + fn.doc + "</p>\n";
+            }
+            html = html + "</div>\n";
+            i = i + 1;
+        }
+    }
+
+    if (exports.types.length > 0) {
+        html = html + "<h2>Types</h2>\n";
+        let i = 0;
+        while (i < exports.types.length) {
+            let t = exports.types[i];
+            html = html + "<div class=\"item\">\n";
+            html = html + "<h3>" + t.name + "</h3>\n";
+            if (t.doc != "") {
+                html = html + "<p>" + t.doc + "</p>\n";
+            }
+            html = html + "</div>\n";
+            i = i + 1;
+        }
+    }
+
+    html = html + "</body>\n</html>\n";
+    return html;
+}
+
+interface FunctionDoc {
+    name: string;
+    signature: string;
+    doc: string;
+}
+
+interface TypeDoc {
+    name: string;
+    doc: string;
+}
+
+interface Exports {
+    functions: FunctionDoc[];
+    types: TypeDoc[];
+}
+
+function extractExports(content: string, includePrivate: boolean): Exports {
+    // TODO: Implement proper parsing
+    return {
+        functions: [],
+        types: []
+    };
+}
+
+function fileToModuleName(file: string): string {
+    // Convert ./src/foo/bar.tscl to foo/bar
+    let name = file;
+    if (name.indexOf("./src/") == 0) {
+        name = name.substring(6);
+    }
+    if (name.indexOf(".tscl") == name.length - 5) {
+        name = name.substring(0, name.length - 5);
+    }
+    return name;
+}
+
+function fileToHtmlPath(file: string): string {
+    return fileToModuleName(file).split("/").join("_") + ".html";
+}
+
+function getStylesheet(): string {
+    return `body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+    line-height: 1.6;
+}
+h1, h2, h3 { color: #333; }
+a { color: #0066cc; }
+pre {
+    background: #f5f5f5;
+    padding: 10px;
+    border-radius: 4px;
+    overflow-x: auto;
+}
+.item {
+    margin-bottom: 20px;
+    padding: 10px;
+    border-left: 3px solid #0066cc;
+}
+`;
+}
+
+function discoverSourceFiles(dir: string): string[] {
+    // TODO: Implement file discovery
+    return [];
+}
+
+function readFile(path: string): string | null {
+    // TODO: Implement
+    return null;
+}
+
+interface Result {
+    success: boolean;
+    error: string;
+}
+
+function createDirectory(path: string): Result {
+    // TODO: Implement
+    return { success: true, error: "" };
+}
+
+function writeFile(path: string, content: string): Result {
+    // TODO: Implement
+    return { success: true, error: "" };
+}
+
+function openInBrowser(path: string): void {
+    // TODO: Implement browser opening
+}
+
+export { runDoc, DocOptions };

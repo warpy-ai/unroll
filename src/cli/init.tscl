@@ -1,0 +1,148 @@
+// unroll init - Initialize a project in existing directory
+
+import { createManifest } from "../config/manifest.tscl";
+
+interface InitOptions {
+    name: string;
+    lib: boolean;
+}
+
+function parseInitArgs(args: string[]): InitOptions {
+    let options: InitOptions = {
+        name: "",
+        lib: false
+    };
+
+    let i = 0;
+    while (i < args.length) {
+        let arg = args[i];
+
+        if (arg == "--lib") {
+            options.lib = true;
+        } else if (arg == "--name") {
+            i = i + 1;
+            if (i < args.length) {
+                options.name = args[i];
+            }
+        }
+
+        i = i + 1;
+    }
+
+    return options;
+}
+
+function runInit(args: string[]): number {
+    let options = parseInitArgs(args);
+
+    // Check if unroll.toml already exists
+    if (manifestExists(".")) {
+        console.error("Error: unroll.toml already exists in current directory");
+        console.error("Use 'unroll new' to create a project in a new directory");
+        return 1;
+    }
+
+    // Use directory name if no name provided
+    let projectName = options.name;
+    if (projectName == "") {
+        projectName = getCurrentDirectoryName();
+    }
+
+    console.log("Initializing " + (options.lib ? "library" : "binary") + " project: " + projectName);
+
+    // Create unroll.toml
+    let manifest = createManifest(projectName, options.lib);
+    let result = writeFile("./unroll.toml", manifest);
+    if (!result.success) {
+        console.error("Error writing manifest: " + result.error);
+        return 1;
+    }
+
+    // Create src directory if it doesn't exist
+    if (!directoryExists("./src")) {
+        result = createDirectory("./src");
+        if (!result.success) {
+            console.error("Error creating src directory: " + result.error);
+            return 1;
+        }
+    }
+
+    // Create main file if it doesn't exist
+    let mainFile = options.lib ? "./src/lib.tscl" : "./src/main.tscl";
+    if (!fileExists(mainFile)) {
+        let content = options.lib ? getLibTemplate(projectName) : getMainTemplate();
+        result = writeFile(mainFile, content);
+        if (!result.success) {
+            console.error("Error creating source file: " + result.error);
+            return 1;
+        }
+    }
+
+    console.log("");
+    console.log("Initialized project '" + projectName + "'");
+    console.log("");
+    console.log("To get started:");
+    console.log("    unroll build");
+    if (!options.lib) {
+        console.log("    unroll run");
+    }
+
+    return 0;
+}
+
+function manifestExists(path: string): boolean {
+    // TODO: Implement file existence check
+    return false;
+}
+
+function getCurrentDirectoryName(): string {
+    // TODO: Implement
+    return "my-project";
+}
+
+interface Result {
+    success: boolean;
+    error: string;
+}
+
+function writeFile(path: string, content: string): Result {
+    // TODO: Implement file writing
+    return { success: true, error: "" };
+}
+
+function directoryExists(path: string): boolean {
+    // TODO: Implement
+    return false;
+}
+
+function createDirectory(path: string): Result {
+    // TODO: Implement
+    return { success: true, error: "" };
+}
+
+function fileExists(path: string): boolean {
+    // TODO: Implement
+    return false;
+}
+
+function getMainTemplate(): string {
+    return `// Main entry point
+
+function main(): void {
+    console.log("Hello, Script!");
+}
+
+main();
+`;
+}
+
+function getLibTemplate(name: string): string {
+    return `// ${name} library
+
+export function greet(name: string): string {
+    return "Hello, " + name + "!";
+}
+`;
+}
+
+export { runInit, InitOptions };

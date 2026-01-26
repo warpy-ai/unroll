@@ -1,0 +1,258 @@
+// Manifest (unroll.toml) parsing and generation
+
+interface Manifest {
+    name: string;
+    version: string;
+    edition: string;
+    license: string;
+    description: string;
+    repository: string;
+    keywords: string[];
+    authors: string[];
+    dependencies: Dependency[];
+    devDependencies: Dependency[];
+    features: Feature[];
+    build: BuildConfig;
+    profiles: Profile[];
+}
+
+interface Dependency {
+    name: string;
+    version: string;
+    optional: boolean;
+    features: string[];
+    git: string;
+    branch: string;
+    path: string;
+}
+
+interface Feature {
+    name: string;
+    dependencies: string[];
+}
+
+interface BuildConfig {
+    target: string;
+    optimization: string;
+    lto: boolean;
+}
+
+interface Profile {
+    name: string;
+    optLevel: number;
+    debug: boolean;
+    lto: string;
+    strip: string;
+    incremental: boolean;
+}
+
+function loadManifest(path: string): Manifest | null {
+    let content = readFile(path);
+    if (content == null) {
+        return null;
+    }
+
+    return parseToml(content);
+}
+
+function saveManifest(path: string, manifest: Manifest): Result {
+    let content = serializeToml(manifest);
+    return writeFile(path, content);
+}
+
+function createManifest(name: string, isLib: boolean): string {
+    let manifest = `[package]
+name = "${name}"
+version = "0.1.0"
+edition = "2025"
+license = "MIT"
+description = ""
+
+[dependencies]
+
+[dev-dependencies]
+
+[build]
+target = "native"
+optimization = "release"
+lto = true
+
+[profile.dev]
+opt-level = 0
+debug = true
+incremental = true
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+
+[profile.dist]
+opt-level = 3
+lto = "fat"
+strip = "all"
+`;
+
+    return manifest;
+}
+
+function parseToml(content: string): Manifest {
+    // Simple TOML parser for manifest files
+    let manifest: Manifest = {
+        name: "",
+        version: "",
+        edition: "2025",
+        license: "",
+        description: "",
+        repository: "",
+        keywords: [],
+        authors: [],
+        dependencies: [],
+        devDependencies: [],
+        features: [],
+        build: {
+            target: "native",
+            optimization: "release",
+            lto: true
+        },
+        profiles: []
+    };
+
+    let lines = content.split("\n");
+    let currentSection = "";
+
+    let i = 0;
+    while (i < lines.length) {
+        let line = lines[i].trim();
+
+        // Skip empty lines and comments
+        if (line == "" || line[0] == "#") {
+            i = i + 1;
+            continue;
+        }
+
+        // Section header
+        if (line[0] == "[") {
+            let end = line.indexOf("]");
+            if (end > 0) {
+                currentSection = line.substring(1, end);
+            }
+            i = i + 1;
+            continue;
+        }
+
+        // Key-value pair
+        let eqIndex = line.indexOf("=");
+        if (eqIndex > 0) {
+            let key = line.substring(0, eqIndex).trim();
+            let value = line.substring(eqIndex + 1).trim();
+
+            // Remove quotes from string values
+            if (value[0] == "\"" && value[value.length - 1] == "\"") {
+                value = value.substring(1, value.length - 1);
+            }
+
+            // Apply to appropriate section
+            if (currentSection == "package") {
+                if (key == "name") manifest.name = value;
+                else if (key == "version") manifest.version = value;
+                else if (key == "edition") manifest.edition = value;
+                else if (key == "license") manifest.license = value;
+                else if (key == "description") manifest.description = value;
+                else if (key == "repository") manifest.repository = value;
+            } else if (currentSection == "dependencies") {
+                manifest.dependencies.push(parseDependency(key, value));
+            } else if (currentSection == "dev-dependencies") {
+                manifest.devDependencies.push(parseDependency(key, value));
+            } else if (currentSection == "build") {
+                if (key == "target") manifest.build.target = value;
+                else if (key == "optimization") manifest.build.optimization = value;
+                else if (key == "lto") manifest.build.lto = value == "true";
+            }
+        }
+
+        i = i + 1;
+    }
+
+    return manifest;
+}
+
+function parseDependency(name: string, value: string): Dependency {
+    let dep: Dependency = {
+        name: name,
+        version: "",
+        optional: false,
+        features: [],
+        git: "",
+        branch: "",
+        path: ""
+    };
+
+    // Simple version string
+    if (value[0] == "\"") {
+        dep.version = value.substring(1, value.length - 1);
+    }
+    // TODO: Handle table format { version = "...", features = [...] }
+
+    return dep;
+}
+
+function serializeToml(manifest: Manifest): string {
+    let output = "[package]\n";
+    output = output + "name = \"" + manifest.name + "\"\n";
+    output = output + "version = \"" + manifest.version + "\"\n";
+    output = output + "edition = \"" + manifest.edition + "\"\n";
+
+    if (manifest.license != "") {
+        output = output + "license = \"" + manifest.license + "\"\n";
+    }
+    if (manifest.description != "") {
+        output = output + "description = \"" + manifest.description + "\"\n";
+    }
+    if (manifest.repository != "") {
+        output = output + "repository = \"" + manifest.repository + "\"\n";
+    }
+
+    output = output + "\n[dependencies]\n";
+    let i = 0;
+    while (i < manifest.dependencies.length) {
+        let dep = manifest.dependencies[i];
+        output = output + "\"" + dep.name + "\" = \"" + dep.version + "\"\n";
+        i = i + 1;
+    }
+
+    output = output + "\n[dev-dependencies]\n";
+    i = 0;
+    while (i < manifest.devDependencies.length) {
+        let dep = manifest.devDependencies[i];
+        output = output + "\"" + dep.name + "\" = \"" + dep.version + "\"\n";
+        i = i + 1;
+    }
+
+    return output;
+}
+
+interface Result {
+    success: boolean;
+    error: string;
+}
+
+function readFile(path: string): string | null {
+    // TODO: Implement file reading
+    return null;
+}
+
+function writeFile(path: string, content: string): Result {
+    // TODO: Implement file writing
+    return { success: true, error: "" };
+}
+
+export {
+    Manifest,
+    Dependency,
+    Feature,
+    BuildConfig,
+    Profile,
+    loadManifest,
+    saveManifest,
+    createManifest
+};

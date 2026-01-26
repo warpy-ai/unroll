@@ -1,0 +1,216 @@
+// unroll lint - Run linter
+
+import { loadManifest } from "../config/manifest.tscl";
+
+interface LintOptions {
+    fix: boolean;
+    verbose: boolean;
+    files: string[];
+    rules: string[];
+}
+
+function parseLintArgs(args: string[]): LintOptions {
+    let options: LintOptions = {
+        fix: false,
+        verbose: false,
+        files: [],
+        rules: []
+    };
+
+    let i = 0;
+    while (i < args.length) {
+        let arg = args[i];
+
+        if (arg == "--fix") {
+            options.fix = true;
+        } else if (arg == "--verbose" || arg == "-v") {
+            options.verbose = true;
+        } else if (arg == "--rule") {
+            i = i + 1;
+            if (i < args.length) {
+                options.rules.push(args[i]);
+            }
+        } else if (arg[0] != "-") {
+            options.files.push(arg);
+        }
+
+        i = i + 1;
+    }
+
+    return options;
+}
+
+function runLint(args: string[]): number {
+    let options = parseLintArgs(args);
+
+    // If no files specified, lint all .tscl files
+    let files = options.files;
+    if (files.length == 0) {
+        files = discoverSourceFiles("./src");
+    }
+
+    if (files.length == 0) {
+        console.log("No files to lint");
+        return 0;
+    }
+
+    console.log("Linting " + files.length + " file(s)...");
+    console.log("");
+
+    let totalWarnings = 0;
+    let totalErrors = 0;
+    let fixedCount = 0;
+
+    let i = 0;
+    while (i < files.length) {
+        let file = files[i];
+        let diagnostics = lintFile(file, options.rules);
+
+        let j = 0;
+        while (j < diagnostics.length) {
+            let diag = diagnostics[j];
+
+            if (diag.severity == "error") {
+                totalErrors = totalErrors + 1;
+            } else {
+                totalWarnings = totalWarnings + 1;
+            }
+
+            // Try to fix if --fix is enabled
+            if (options.fix && diag.fix != null) {
+                let fixed = applyFix(file, diag.fix);
+                if (fixed) {
+                    fixedCount = fixedCount + 1;
+                    j = j + 1;
+                    continue;
+                }
+            }
+
+            // Print diagnostic
+            printDiagnostic(file, diag);
+
+            j = j + 1;
+        }
+
+        i = i + 1;
+    }
+
+    // Summary
+    console.log("");
+    if (totalErrors > 0 || totalWarnings > 0) {
+        console.log("Found " + totalErrors + " error(s), " + totalWarnings + " warning(s)");
+        if (fixedCount > 0) {
+            console.log("Fixed " + fixedCount + " issue(s)");
+        }
+        return totalErrors > 0 ? 1 : 0;
+    }
+
+    console.log("No issues found");
+    return 0;
+}
+
+interface Diagnostic {
+    severity: string;  // "error" | "warning" | "info"
+    message: string;
+    line: number;
+    column: number;
+    rule: string;
+    fix: Fix | null;
+}
+
+interface Fix {
+    range: Range;
+    replacement: string;
+}
+
+interface Range {
+    startLine: number;
+    startColumn: number;
+    endLine: number;
+    endColumn: number;
+}
+
+function lintFile(path: string, rules: string[]): Diagnostic[] {
+    // Read file
+    let content = readFile(path);
+    if (content == null) {
+        return [{
+            severity: "error",
+            message: "Could not read file",
+            line: 0,
+            column: 0,
+            rule: "io",
+            fix: null
+        }];
+    }
+
+    let diagnostics: Diagnostic[] = [];
+
+    // Run lint rules
+    diagnostics = diagnostics.concat(checkUnusedVariables(content));
+    diagnostics = diagnostics.concat(checkConsoleStatements(content));
+    diagnostics = diagnostics.concat(checkTodoComments(content));
+    diagnostics = diagnostics.concat(checkLineLength(content));
+
+    return diagnostics;
+}
+
+function checkUnusedVariables(content: string): Diagnostic[] {
+    // TODO: Implement unused variable detection
+    return [];
+}
+
+function checkConsoleStatements(content: string): Diagnostic[] {
+    // TODO: Implement console.log detection
+    return [];
+}
+
+function checkTodoComments(content: string): Diagnostic[] {
+    // TODO: Implement TODO comment detection
+    return [];
+}
+
+function checkLineLength(content: string): Diagnostic[] {
+    let diagnostics: Diagnostic[] = [];
+    let lines = content.split("\n");
+    let maxLength = 100;
+
+    let i = 0;
+    while (i < lines.length) {
+        if (lines[i].length > maxLength) {
+            diagnostics.push({
+                severity: "warning",
+                message: "Line exceeds " + maxLength + " characters",
+                line: i + 1,
+                column: maxLength + 1,
+                rule: "max-line-length",
+                fix: null
+            });
+        }
+        i = i + 1;
+    }
+
+    return diagnostics;
+}
+
+function applyFix(file: string, fix: Fix): boolean {
+    // TODO: Implement fix application
+    return false;
+}
+
+function printDiagnostic(file: string, diag: Diagnostic): void {
+    let severityStr = diag.severity == "error" ? "error" : "warning";
+    console.log(file + ":" + diag.line + ":" + diag.column + " " + severityStr + ": " + diag.message + " [" + diag.rule + "]");
+}
+
+function discoverSourceFiles(dir: string): string[] {
+    // TODO: Implement file discovery
+    return [];
+}
+
+function readFile(path: string): string | null {
+    // TODO: Implement file reading
+    return null;
+}
+
+export { runLint, LintOptions };

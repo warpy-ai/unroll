@@ -1,0 +1,161 @@
+// unroll test - Run project tests
+
+import { loadManifest, Manifest } from "../config/manifest.tscl";
+import { discoverTests } from "../build/test_discovery.tscl";
+
+interface TestOptions {
+    filter: string;
+    coverage: boolean;
+    verbose: boolean;
+    nocapture: boolean;
+    jobs: number;
+}
+
+function parseTestArgs(args: string[]): TestOptions {
+    let options: TestOptions = {
+        filter: "",
+        coverage: false,
+        verbose: false,
+        nocapture: false,
+        jobs: 0
+    };
+
+    let i = 0;
+    while (i < args.length) {
+        let arg = args[i];
+
+        if (arg == "--filter" || arg == "-f") {
+            i = i + 1;
+            if (i < args.length) {
+                options.filter = args[i];
+            }
+        } else if (arg == "--coverage") {
+            options.coverage = true;
+        } else if (arg == "--verbose" || arg == "-v") {
+            options.verbose = true;
+        } else if (arg == "--nocapture") {
+            options.nocapture = true;
+        } else if (arg == "--jobs" || arg == "-j") {
+            i = i + 1;
+            if (i < args.length) {
+                options.jobs = parseInt(args[i]);
+            }
+        } else if (arg[0] != "-") {
+            // Positional argument as filter
+            options.filter = arg;
+        }
+
+        i = i + 1;
+    }
+
+    return options;
+}
+
+function runTest(args: string[]): number {
+    let options = parseTestArgs(args);
+
+    // Load manifest
+    let manifest = loadManifest("./unroll.toml");
+    if (manifest == null) {
+        console.error("Error: could not find unroll.toml");
+        return 1;
+    }
+
+    console.log("Running tests for " + manifest.name + "...");
+    console.log("");
+
+    // Discover test files
+    let tests = discoverTests("./tests", options.filter);
+
+    if (tests.length == 0) {
+        console.log("No tests found");
+        return 0;
+    }
+
+    console.log("Found " + tests.length + " test(s)");
+    console.log("");
+
+    // Run tests
+    let passed = 0;
+    let failed = 0;
+    let skipped = 0;
+
+    let i = 0;
+    while (i < tests.length) {
+        let test = tests[i];
+        let result = runSingleTest(test, options);
+
+        if (result.status == "passed") {
+            passed = passed + 1;
+            if (options.verbose) {
+                console.log("  PASS " + test.name);
+            }
+        } else if (result.status == "failed") {
+            failed = failed + 1;
+            console.log("  FAIL " + test.name);
+            if (result.message != "") {
+                console.log("       " + result.message);
+            }
+        } else if (result.status == "skipped") {
+            skipped = skipped + 1;
+            if (options.verbose) {
+                console.log("  SKIP " + test.name);
+            }
+        }
+
+        i = i + 1;
+    }
+
+    // Summary
+    console.log("");
+    console.log("Results: " + passed + " passed, " + failed + " failed, " + skipped + " skipped");
+
+    // Coverage report
+    if (options.coverage) {
+        console.log("");
+        console.log("Generating coverage report...");
+        generateCoverageReport();
+    }
+
+    return failed > 0 ? 1 : 0;
+}
+
+interface TestFile {
+    name: string;
+    path: string;
+}
+
+interface TestResult {
+    status: string;  // "passed" | "failed" | "skipped"
+    message: string;
+    duration: number;
+}
+
+function runSingleTest(test: TestFile, options: TestOptions): TestResult {
+    // TODO: Implement test execution
+    return {
+        status: "passed",
+        message: "",
+        duration: 0
+    };
+}
+
+function generateCoverageReport(): void {
+    // TODO: Implement coverage report generation
+    console.log("Coverage: not yet implemented");
+}
+
+function parseInt(s: string): number {
+    let result = 0;
+    let i = 0;
+    while (i < s.length) {
+        let c = s[i];
+        if (c >= "0" && c <= "9") {
+            result = result * 10 + (c.charCodeAt(0) - "0".charCodeAt(0));
+        }
+        i = i + 1;
+    }
+    return result;
+}
+
+export { runTest, TestOptions };

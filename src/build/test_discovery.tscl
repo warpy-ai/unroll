@@ -1,0 +1,125 @@
+// Test discovery - find and enumerate test files
+
+interface TestFile {
+    name: string;
+    path: string;
+}
+
+function discoverTests(dir: string, filter: string): TestFile[] {
+    let tests: TestFile[] = [];
+
+    // Find all test files in the tests directory
+    let files = listDirectory(dir);
+
+    let i = 0;
+    while (i < files.length) {
+        let file = files[i];
+
+        // Check if it's a test file
+        if (isTestFile(file)) {
+            let name = getTestName(file);
+
+            // Apply filter if specified
+            if (filter == "" || matchesFilter(name, filter)) {
+                tests.push({
+                    name: name,
+                    path: dir + "/" + file
+                });
+            }
+        }
+
+        i = i + 1;
+    }
+
+    // Sort tests by name
+    tests = sortTests(tests);
+
+    return tests;
+}
+
+function isTestFile(filename: string): boolean {
+    // Test files end with _test.tscl or .test.tscl
+    if (filename.indexOf("_test.tscl") == filename.length - 10) {
+        return true;
+    }
+    if (filename.indexOf(".test.tscl") == filename.length - 10) {
+        return true;
+    }
+    // Or are in tests/ directory and end with .tscl
+    if (filename.indexOf(".tscl") == filename.length - 5) {
+        return true;
+    }
+    return false;
+}
+
+function getTestName(filename: string): string {
+    // Remove directory path
+    let slashIndex = filename.lastIndexOf("/");
+    if (slashIndex >= 0) {
+        filename = filename.substring(slashIndex + 1);
+    }
+
+    // Remove extension
+    if (filename.indexOf(".tscl") == filename.length - 5) {
+        filename = filename.substring(0, filename.length - 5);
+    }
+
+    // Remove _test or .test suffix
+    if (filename.indexOf("_test") == filename.length - 5) {
+        filename = filename.substring(0, filename.length - 5);
+    }
+    if (filename.indexOf(".test") == filename.length - 5) {
+        filename = filename.substring(0, filename.length - 5);
+    }
+
+    return filename;
+}
+
+function matchesFilter(name: string, filter: string): boolean {
+    // Simple glob-style matching
+    // * matches any characters
+
+    if (filter == "*") {
+        return true;
+    }
+
+    // Handle trailing wildcard
+    if (filter[filter.length - 1] == "*") {
+        let prefix = filter.substring(0, filter.length - 1);
+        return name.indexOf(prefix) == 0;
+    }
+
+    // Handle leading wildcard
+    if (filter[0] == "*") {
+        let suffix = filter.substring(1);
+        return name.indexOf(suffix) == name.length - suffix.length;
+    }
+
+    // Exact match
+    return name == filter;
+}
+
+function sortTests(tests: TestFile[]): TestFile[] {
+    // Simple bubble sort by name
+    let i = 0;
+    while (i < tests.length) {
+        let j = i + 1;
+        while (j < tests.length) {
+            if (tests[j].name < tests[i].name) {
+                let temp = tests[i];
+                tests[i] = tests[j];
+                tests[j] = temp;
+            }
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    return tests;
+}
+
+function listDirectory(path: string): string[] {
+    // TODO: Implement directory listing
+    return [];
+}
+
+export { discoverTests, TestFile };

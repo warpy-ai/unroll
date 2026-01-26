@@ -1,0 +1,227 @@
+// Compiler integration - interface with Script compiler
+
+import { Manifest } from "../config/manifest.tscl";
+import { Lockfile } from "../config/lockfile.tscl";
+
+interface CompileOptions {
+    profile: string;       // "dev" | "release" | "dist"
+    target: string;        // "native" | "wasm32" | etc
+    jobs: number;          // Parallel compilation jobs
+    verbose: boolean;
+}
+
+interface CompileResult {
+    success: boolean;
+    error: string;
+    objects: string[];     // Compiled object files
+    warnings: CompileWarning[];
+}
+
+interface CompileWarning {
+    file: string;
+    line: number;
+    message: string;
+}
+
+function compileSources(manifest: Manifest, lockfile: Lockfile | null, options: CompileOptions): CompileResult {
+    let result: CompileResult = {
+        success: false,
+        error: "",
+        objects: [],
+        warnings: []
+    };
+
+    // Discover source files
+    let sources = discoverSources("./src");
+    if (sources.length == 0) {
+        result.error = "No source files found";
+        return result;
+    }
+
+    // Create output directory
+    let outputDir = "./target/" + options.profile;
+    createDirectory(outputDir);
+
+    // Get compiler flags based on profile
+    let flags = getCompilerFlags(options.profile, options.target);
+
+    // Compile each source file
+    let i = 0;
+    while (i < sources.length) {
+        let source = sources[i];
+        let outputPath = getObjectPath(source, outputDir);
+
+        if (options.verbose) {
+            console.log("Compiling: " + source);
+        }
+
+        let compileResult = compileFile(source, outputPath, flags);
+
+        if (!compileResult.success) {
+            result.error = "Failed to compile " + source + ": " + compileResult.error;
+            return result;
+        }
+
+        result.objects.push(outputPath);
+
+        // Collect warnings
+        let j = 0;
+        while (j < compileResult.warnings.length) {
+            result.warnings.push(compileResult.warnings[j]);
+            j = j + 1;
+        }
+
+        i = i + 1;
+    }
+
+    // Compile dependencies if not using lockfile
+    if (lockfile != null) {
+        let depResult = compileDependencies(lockfile, outputDir, flags, options.verbose);
+        if (!depResult.success) {
+            result.error = depResult.error;
+            return result;
+        }
+
+        // Add dependency objects
+        let k = 0;
+        while (k < depResult.objects.length) {
+            result.objects.push(depResult.objects[k]);
+            k = k + 1;
+        }
+    }
+
+    result.success = true;
+    return result;
+}
+
+interface CompilerFlags {
+    optLevel: number;
+    debug: boolean;
+    lto: string;
+    target: string;
+}
+
+function getCompilerFlags(profile: string, target: string): CompilerFlags {
+    let flags: CompilerFlags = {
+        optLevel: 0,
+        debug: true,
+        lto: "none",
+        target: target
+    };
+
+    if (profile == "release") {
+        flags.optLevel = 3;
+        flags.debug = false;
+        flags.lto = "thin";
+    } else if (profile == "dist") {
+        flags.optLevel = 3;
+        flags.debug = false;
+        flags.lto = "fat";
+    }
+
+    return flags;
+}
+
+function discoverSources(dir: string): string[] {
+    // TODO: Implement recursive file discovery
+    return [];
+}
+
+function getObjectPath(source: string, outputDir: string): string {
+    // Convert ./src/foo/bar.tscl to ./target/profile/foo_bar.o
+    let name = source;
+
+    // Remove ./src/ prefix
+    if (name.indexOf("./src/") == 0) {
+        name = name.substring(6);
+    }
+
+    // Replace / with _
+    name = name.split("/").join("_");
+
+    // Replace .tscl with .o
+    if (name.indexOf(".tscl") == name.length - 5) {
+        name = name.substring(0, name.length - 5) + ".o";
+    }
+
+    return outputDir + "/" + name;
+}
+
+interface SingleCompileResult {
+    success: boolean;
+    error: string;
+    warnings: CompileWarning[];
+}
+
+function compileFile(source: string, output: string, flags: CompilerFlags): SingleCompileResult {
+    // Build command line for script compiler
+    let args: string[] = ["build", source, "-o", output];
+
+    if (flags.optLevel > 0) {
+        args.push("-O" + flags.optLevel);
+    }
+
+    if (flags.debug) {
+        args.push("-g");
+    }
+
+    if (flags.lto != "none") {
+        args.push("--lto=" + flags.lto);
+    }
+
+    if (flags.target != "native") {
+        args.push("--target=" + flags.target);
+    }
+
+    // Execute compiler
+    let result = executeCompiler(args);
+
+    return {
+        success: result.exitCode == 0,
+        error: result.stderr,
+        warnings: parseWarnings(result.stdout)
+    };
+}
+
+function compileDependencies(lockfile: Lockfile, outputDir: string, flags: CompilerFlags, verbose: boolean): CompileResult {
+    let result: CompileResult = {
+        success: true,
+        error: "",
+        objects: [],
+        warnings: []
+    };
+
+    // TODO: Implement dependency compilation
+    // For each locked package:
+    // 1. Find cached build or source
+    // 2. Compile if needed
+    // 3. Add object files to result
+
+    return result;
+}
+
+interface ExecuteResult {
+    exitCode: number;
+    stdout: string;
+    stderr: string;
+}
+
+function executeCompiler(args: string[]): ExecuteResult {
+    // TODO: Implement process execution
+    return {
+        exitCode: 0,
+        stdout: "",
+        stderr: ""
+    };
+}
+
+function parseWarnings(output: string): CompileWarning[] {
+    // TODO: Parse compiler warning output
+    return [];
+}
+
+function createDirectory(path: string): void {
+    // TODO: Implement
+}
+
+export { compileSources, CompileOptions, CompileResult };

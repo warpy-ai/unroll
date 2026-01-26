@@ -1,0 +1,145 @@
+// unroll new - Create a new project
+
+import { createManifest } from "../config/manifest.tscl";
+import { createDirectoryStructure } from "../config/scaffold.tscl";
+
+interface NewOptions {
+    name: string;
+    lib: boolean;
+    path: string;
+}
+
+function parseNewArgs(args: string[]): NewOptions {
+    let options: NewOptions = {
+        name: "",
+        lib: false,
+        path: ""
+    };
+
+    let i = 0;
+    while (i < args.length) {
+        let arg = args[i];
+
+        if (arg == "--lib") {
+            options.lib = true;
+        } else if (arg == "--path") {
+            i = i + 1;
+            if (i < args.length) {
+                options.path = args[i];
+            }
+        } else if (arg[0] != "-") {
+            options.name = arg;
+        }
+
+        i = i + 1;
+    }
+
+    return options;
+}
+
+function runNew(args: string[]): number {
+    let options = parseNewArgs(args);
+
+    if (options.name == "") {
+        console.error("Error: project name is required");
+        console.error("Usage: unroll new <name> [--lib]");
+        return 1;
+    }
+
+    // Validate project name
+    if (!isValidProjectName(options.name)) {
+        console.error("Error: invalid project name '" + options.name + "'");
+        console.error("Project names must start with a letter and contain only letters, numbers, hyphens, and underscores");
+        return 1;
+    }
+
+    let projectPath = options.path;
+    if (projectPath == "") {
+        projectPath = "./" + options.name;
+    }
+
+    console.log("Creating new " + (options.lib ? "library" : "binary") + " project: " + options.name);
+
+    // Create project directory structure
+    let result = createDirectoryStructure(projectPath, options.lib);
+    if (!result.success) {
+        console.error("Error creating project: " + result.error);
+        return 1;
+    }
+
+    // Create unroll.toml
+    let manifest = createManifest(options.name, options.lib);
+    result = writeManifest(projectPath, manifest);
+    if (!result.success) {
+        console.error("Error writing manifest: " + result.error);
+        return 1;
+    }
+
+    // Create initial source files
+    result = createInitialFiles(projectPath, options.name, options.lib);
+    if (!result.success) {
+        console.error("Error creating source files: " + result.error);
+        return 1;
+    }
+
+    console.log("");
+    console.log("Created project '" + options.name + "' at " + projectPath);
+    console.log("");
+    console.log("To get started:");
+    console.log("    cd " + options.name);
+    console.log("    unroll build");
+    if (!options.lib) {
+        console.log("    unroll run");
+    }
+
+    return 0;
+}
+
+function isValidProjectName(name: string): boolean {
+    if (name.length == 0) {
+        return false;
+    }
+
+    // Must start with a letter
+    let first = name[0];
+    if (!isLetter(first)) {
+        return false;
+    }
+
+    // Rest must be letters, numbers, hyphens, or underscores
+    let i = 1;
+    while (i < name.length) {
+        let c = name[i];
+        if (!isLetter(c) && !isDigit(c) && c != "-" && c != "_") {
+            return false;
+        }
+        i = i + 1;
+    }
+
+    return true;
+}
+
+function isLetter(c: string): boolean {
+    return (c >= "a" && c <= "z") || (c >= "A" && c <= "Z");
+}
+
+function isDigit(c: string): boolean {
+    return c >= "0" && c <= "9";
+}
+
+interface Result {
+    success: boolean;
+    error: string;
+}
+
+function writeManifest(path: string, content: string): Result {
+    // TODO: Implement file writing
+    return { success: true, error: "" };
+}
+
+function createInitialFiles(path: string, name: string, isLib: boolean): Result {
+    // TODO: Implement file creation
+    return { success: true, error: "" };
+}
+
+export { runNew, NewOptions };

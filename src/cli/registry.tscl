@@ -1,0 +1,352 @@
+// Registry commands: search, info, publish, login
+
+import { loadManifest } from "../config/manifest.tscl";
+import { getRegistryConfig, RegistryConfig } from "../registry/config.tscl";
+
+const DEFAULT_REGISTRY = "https://rolls.script-lang.org";
+
+// ============================================================================
+// unroll search
+// ============================================================================
+
+interface SearchOptions {
+    query: string;
+    limit: number;
+}
+
+function parseSearchArgs(args: string[]): SearchOptions {
+    let options: SearchOptions = {
+        query: "",
+        limit: 20
+    };
+
+    let i = 0;
+    while (i < args.length) {
+        let arg = args[i];
+
+        if (arg == "--limit") {
+            i = i + 1;
+            if (i < args.length) {
+                options.limit = parseInt(args[i]);
+            }
+        } else if (arg[0] != "-") {
+            options.query = arg;
+        }
+
+        i = i + 1;
+    }
+
+    return options;
+}
+
+function runSearch(args: string[]): number {
+    let options = parseSearchArgs(args);
+
+    if (options.query == "") {
+        console.error("Error: search query required");
+        console.error("Usage: unroll search <query>");
+        return 1;
+    }
+
+    let config = getRegistryConfig();
+    console.log("Searching for '" + options.query + "'...");
+    console.log("");
+
+    let results = searchPackages(config.url, options.query, options.limit);
+
+    if (results.error != "") {
+        console.error("Error: " + results.error);
+        return 1;
+    }
+
+    if (results.packages.length == 0) {
+        console.log("No packages found");
+        return 0;
+    }
+
+    let i = 0;
+    while (i < results.packages.length) {
+        let pkg = results.packages[i];
+        console.log(pkg.name + " (" + pkg.version + ")");
+        if (pkg.description != "") {
+            console.log("  " + pkg.description);
+        }
+        i = i + 1;
+    }
+
+    return 0;
+}
+
+interface PackageInfo {
+    name: string;
+    version: string;
+    description: string;
+    downloads: number;
+}
+
+interface SearchResult {
+    packages: PackageInfo[];
+    error: string;
+}
+
+function searchPackages(registry: string, query: string, limit: number): SearchResult {
+    // TODO: Implement HTTP request to registry
+    return {
+        packages: [],
+        error: ""
+    };
+}
+
+// ============================================================================
+// unroll info
+// ============================================================================
+
+interface InfoOptions {
+    package: string;
+    versions: boolean;
+}
+
+function parseInfoArgs(args: string[]): InfoOptions {
+    let options: InfoOptions = {
+        package: "",
+        versions: false
+    };
+
+    let i = 0;
+    while (i < args.length) {
+        let arg = args[i];
+
+        if (arg == "--versions") {
+            options.versions = true;
+        } else if (arg[0] != "-") {
+            options.package = arg;
+        }
+
+        i = i + 1;
+    }
+
+    return options;
+}
+
+function runInfo(args: string[]): number {
+    let options = parseInfoArgs(args);
+
+    if (options.package == "") {
+        console.error("Error: package name required");
+        console.error("Usage: unroll info <package> [--versions]");
+        return 1;
+    }
+
+    let config = getRegistryConfig();
+    let info = getPackageInfo(config.url, options.package);
+
+    if (info.error != "") {
+        console.error("Error: " + info.error);
+        return 1;
+    }
+
+    console.log(info.name + "@" + info.latestVersion);
+    console.log("");
+
+    if (info.description != "") {
+        console.log(info.description);
+        console.log("");
+    }
+
+    console.log("License: " + info.license);
+    console.log("Homepage: " + info.homepage);
+    console.log("Repository: " + info.repository);
+    console.log("Downloads: " + info.downloads);
+    console.log("");
+
+    if (info.dependencies.length > 0) {
+        console.log("Dependencies:");
+        let i = 0;
+        while (i < info.dependencies.length) {
+            console.log("  " + info.dependencies[i]);
+            i = i + 1;
+        }
+        console.log("");
+    }
+
+    if (options.versions) {
+        console.log("Versions:");
+        let i = 0;
+        while (i < info.versions.length) {
+            console.log("  " + info.versions[i]);
+            i = i + 1;
+        }
+    }
+
+    return 0;
+}
+
+interface DetailedPackageInfo {
+    name: string;
+    latestVersion: string;
+    description: string;
+    license: string;
+    homepage: string;
+    repository: string;
+    downloads: number;
+    dependencies: string[];
+    versions: string[];
+    error: string;
+}
+
+function getPackageInfo(registry: string, name: string): DetailedPackageInfo {
+    // TODO: Implement HTTP request to registry
+    return {
+        name: name,
+        latestVersion: "0.0.0",
+        description: "",
+        license: "Unknown",
+        homepage: "",
+        repository: "",
+        downloads: 0,
+        dependencies: [],
+        versions: [],
+        error: "Package not found"
+    };
+}
+
+// ============================================================================
+// unroll publish
+// ============================================================================
+
+function runPublish(args: string[]): number {
+    // Load manifest
+    let manifest = loadManifest("./unroll.toml");
+    if (manifest == null) {
+        console.error("Error: could not find unroll.toml");
+        return 1;
+    }
+
+    let config = getRegistryConfig();
+
+    // Check authentication
+    if (config.token == "") {
+        console.error("Error: not logged in");
+        console.error("Run 'unroll login' first");
+        return 1;
+    }
+
+    console.log("Publishing " + manifest.name + "@" + manifest.version + "...");
+
+    // Package the project
+    let tarball = createTarball(".");
+    if (tarball.error != "") {
+        console.error("Error creating package: " + tarball.error);
+        return 1;
+    }
+
+    // Upload to registry
+    let result = uploadPackage(config.url, config.token, tarball.data);
+    if (!result.success) {
+        console.error("Error publishing: " + result.error);
+        return 1;
+    }
+
+    console.log("Published " + manifest.name + "@" + manifest.version);
+    return 0;
+}
+
+interface TarballResult {
+    data: string;
+    error: string;
+}
+
+function createTarball(dir: string): TarballResult {
+    // TODO: Implement tarball creation
+    return { data: "", error: "" };
+}
+
+interface UploadResult {
+    success: boolean;
+    error: string;
+}
+
+function uploadPackage(registry: string, token: string, data: string): UploadResult {
+    // TODO: Implement HTTP upload
+    return { success: true, error: "" };
+}
+
+// ============================================================================
+// unroll login
+// ============================================================================
+
+function runLogin(args: string[]): number {
+    let config = getRegistryConfig();
+
+    console.log("Logging in to " + config.url + "...");
+    console.log("");
+    console.log("Visit this URL to authenticate:");
+    console.log(config.url + "/cli/login");
+    console.log("");
+    console.log("Then paste your token below:");
+
+    // Read token from stdin
+    let token = readLine();
+
+    if (token == "") {
+        console.error("Error: no token provided");
+        return 1;
+    }
+
+    // Validate token
+    let valid = validateToken(config.url, token);
+    if (!valid.success) {
+        console.error("Error: invalid token");
+        return 1;
+    }
+
+    // Save token
+    let result = saveToken(token);
+    if (!result.success) {
+        console.error("Error saving token: " + result.error);
+        return 1;
+    }
+
+    console.log("Logged in as " + valid.username);
+    return 0;
+}
+
+interface ValidateResult {
+    success: boolean;
+    username: string;
+}
+
+function validateToken(registry: string, token: string): ValidateResult {
+    // TODO: Implement token validation
+    return { success: false, username: "" };
+}
+
+interface SaveResult {
+    success: boolean;
+    error: string;
+}
+
+function saveToken(token: string): SaveResult {
+    // TODO: Save to ~/.unroll/credentials
+    return { success: true, error: "" };
+}
+
+function readLine(): string {
+    // TODO: Implement stdin reading
+    return "";
+}
+
+function parseInt(s: string): number {
+    let result = 0;
+    let i = 0;
+    while (i < s.length) {
+        let c = s[i];
+        if (c >= "0" && c <= "9") {
+            result = result * 10 + (c.charCodeAt(0) - "0".charCodeAt(0));
+        }
+        i = i + 1;
+    }
+    return result;
+}
+
+export { runSearch, runInfo, runPublish, runLogin };

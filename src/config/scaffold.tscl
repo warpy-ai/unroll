@@ -1,0 +1,106 @@
+// Project scaffolding - create directory structure
+
+interface ScaffoldResult {
+    success: boolean;
+    error: string;
+}
+
+function createDirectoryStructure(path: string, isLib: boolean): ScaffoldResult {
+    // Create root directory
+    let result = createDirectory(path);
+    if (!result.success) {
+        return result;
+    }
+
+    // Create src directory
+    result = createDirectory(path + "/src");
+    if (!result.success) {
+        return result;
+    }
+
+    // Create tests directory
+    result = createDirectory(path + "/tests");
+    if (!result.success) {
+        return result;
+    }
+
+    // Create examples directory
+    result = createDirectory(path + "/examples");
+    if (!result.success) {
+        return result;
+    }
+
+    // Create main source file
+    let mainFile = isLib ? "/src/lib.tscl" : "/src/main.tscl";
+    let mainContent = isLib ? getLibTemplate() : getMainTemplate();
+    result = writeFile(path + mainFile, mainContent);
+    if (!result.success) {
+        return result;
+    }
+
+    // Create .gitignore
+    result = writeFile(path + "/.gitignore", getGitignore());
+    if (!result.success) {
+        return result;
+    }
+
+    return { success: true, error: "" };
+}
+
+function getMainTemplate(): string {
+    return `// Main entry point
+
+function main(): void {
+    console.log("Hello, Script!");
+}
+
+main();
+`;
+}
+
+function getLibTemplate(): string {
+    return `// Library entry point
+
+/// Greet a person by name
+export function greet(name: string): string {
+    return "Hello, " + name + "!";
+}
+
+/// Add two numbers
+export function add(a: number, b: number): number {
+    return a + b;
+}
+`;
+}
+
+function getGitignore(): string {
+    return `/target/
+/unroll.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug
+*.log
+`;
+}
+
+function createDirectory(path: string): ScaffoldResult {
+    // TODO: Implement directory creation
+    return { success: true, error: "" };
+}
+
+function writeFile(path: string, content: string): ScaffoldResult {
+    // TODO: Implement file writing
+    return { success: true, error: "" };
+}
+
+export { createDirectoryStructure, ScaffoldResult };

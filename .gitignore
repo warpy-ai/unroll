@@ -1,0 +1,59 @@
+# Build artifacts
+/target/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+
+# Dependencies
+/deps/
+/.unroll/
+
+# IDE and editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Debug and logs
+*.log
+debug/
+*.pdb
+
+# Coverage reports
+coverage/
+*.lcov
+
+# Documentation build
+/docs/_build/
+
+# Test artifacts
+/test-results/
+*.profraw
+*.profdata
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Package tarballs
+*.tar.gz
+*.tgz
+
+# Generated files
+*.generated.*

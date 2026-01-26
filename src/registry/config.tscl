@@ -1,0 +1,148 @@
+// Registry configuration
+
+interface RegistryConfig {
+    url: string;
+    token: string;
+}
+
+function getRegistryConfig(): RegistryConfig {
+    let config: RegistryConfig = {
+        url: "https://rolls.script-lang.org",
+        token: ""
+    };
+
+    // Try to load from config file
+    let configPath = getConfigPath();
+    let content = readFile(configPath);
+
+    if (content != null) {
+        let parsed = parseConfig(content);
+        if (parsed.url != "") {
+            config.url = parsed.url;
+        }
+        if (parsed.token != "") {
+            config.token = parsed.token;
+        }
+    }
+
+    // Try to load token from credentials file
+    let credPath = getCredentialsPath();
+    let credContent = readFile(credPath);
+
+    if (credContent != null) {
+        let token = parseCredentials(credContent, config.url);
+        if (token != "") {
+            config.token = token;
+        }
+    }
+
+    // Environment variable overrides
+    let envToken = getEnv("UNROLL_TOKEN");
+    if (envToken != "") {
+        config.token = envToken;
+    }
+
+    let envRegistry = getEnv("UNROLL_REGISTRY");
+    if (envRegistry != "") {
+        config.url = envRegistry;
+    }
+
+    return config;
+}
+
+function getConfigPath(): string {
+    let home = getEnv("HOME");
+    if (home == "") {
+        home = getEnv("USERPROFILE");  // Windows
+    }
+    return home + "/.unroll/config.toml";
+}
+
+function getCredentialsPath(): string {
+    let home = getEnv("HOME");
+    if (home == "") {
+        home = getEnv("USERPROFILE");  // Windows
+    }
+    return home + "/.unroll/credentials";
+}
+
+function parseConfig(content: string): RegistryConfig {
+    let config: RegistryConfig = {
+        url: "",
+        token: ""
+    };
+
+    let lines = content.split("\n");
+    let i = 0;
+    while (i < lines.length) {
+        let line = lines[i].trim();
+
+        // Skip comments and empty lines
+        if (line == "" || line[0] == "#") {
+            i = i + 1;
+            continue;
+        }
+
+        let eqIndex = line.indexOf("=");
+        if (eqIndex > 0) {
+            let key = line.substring(0, eqIndex).trim();
+            let value = line.substring(eqIndex + 1).trim();
+
+            // Remove quotes
+            if (value[0] == "\"" && value[value.length - 1] == "\"") {
+                value = value.substring(1, value.length - 1);
+            }
+
+            if (key == "default" || key == "registry") {
+                config.url = value;
+            } else if (key == "token") {
+                // Check for env reference
+                if (value.indexOf("env:") == 0) {
+                    let envName = value.substring(4);
+                    config.token = getEnv(envName);
+                } else {
+                    config.token = value;
+                }
+            }
+        }
+
+        i = i + 1;
+    }
+
+    return config;
+}
+
+function parseCredentials(content: string, registry: string): string {
+    // Simple format: registry = token
+    let lines = content.split("\n");
+    let i = 0;
+    while (i < lines.length) {
+        let line = lines[i].trim();
+
+        let eqIndex = line.indexOf("=");
+        if (eqIndex > 0) {
+            let url = line.substring(0, eqIndex).trim();
+            let token = line.substring(eqIndex + 1).trim();
+
+            if (url == registry || url == "default") {
+                return token;
+            }
+        }
+
+        i = i + 1;
+    }
+
+    return "";
+}
+
+function readFile(path: string): string | null {
+    // TODO: Implement file reading
+    return null;
+}
+
+function getEnv(name: string): string {
+    // TODO: Implement environment variable reading
+    return "";
+}
+
+export { RegistryConfig, getRegistryConfig };

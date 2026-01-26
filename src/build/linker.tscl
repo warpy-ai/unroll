@@ -1,0 +1,129 @@
+// Linker - link object files into final binary
+
+import { Manifest } from "../config/manifest.tscl";
+
+interface LinkOptions {
+    profile: string;
+    target: string;
+}
+
+interface LinkResult {
+    success: boolean;
+    error: string;
+    outputPath: string;
+}
+
+function linkBinary(manifest: Manifest, objects: string[], options: LinkOptions): LinkResult {
+    let result: LinkResult = {
+        success: false,
+        error: "",
+        outputPath: ""
+    };
+
+    if (objects.length == 0) {
+        result.error = "No object files to link";
+        return result;
+    }
+
+    // Determine output path
+    let outputDir = "./target/" + options.profile;
+    let outputPath = outputDir + "/" + manifest.name;
+
+    // Add platform-specific extension
+    if (options.target.indexOf("windows") >= 0) {
+        outputPath = outputPath + ".exe";
+    } else if (options.target.indexOf("wasm") >= 0) {
+        outputPath = outputPath + ".wasm";
+    }
+
+    // Build linker arguments
+    let args = buildLinkerArgs(objects, outputPath, options);
+
+    // Execute linker
+    let execResult = executeLinker(args);
+
+    if (execResult.exitCode != 0) {
+        result.error = "Linker failed: " + execResult.stderr;
+        return result;
+    }
+
+    // Strip symbols if dist profile
+    if (options.profile == "dist") {
+        stripBinary(outputPath);
+    }
+
+    result.success = true;
+    result.outputPath = outputPath;
+    return result;
+}
+
+function buildLinkerArgs(objects: string[], output: string, options: LinkOptions): string[] {
+    let args: string[] = [];
+
+    // Output file
+    args.push("-o");
+    args.push(output);
+
+    // Object files
+    let i = 0;
+    while (i < objects.length) {
+        args.push(objects[i]);
+        i = i + 1;
+    }
+
+    // LTO flags
+    if (options.profile == "release") {
+        args.push("-flto=thin");
+    } else if (options.profile == "dist") {
+        args.push("-flto");
+    }
+
+    // Optimization
+    if (options.profile == "release" || options.profile == "dist") {
+        args.push("-O3");
+    }
+
+    // Platform-specific flags
+    if (options.target == "native") {
+        // Link against system libraries
+        args.push("-lpthread");
+        args.push("-lm");
+    } else if (options.target.indexOf("wasm") >= 0) {
+        args.push("--target=wasm32");
+        args.push("-nostdlib");
+    }
+
+    return args;
+}
+
+interface ExecuteResult {
+    exitCode: number;
+    stdout: string;
+    stderr: string;
+}
+
+function executeLinker(args: string[]): ExecuteResult {
+    // Use clang as linker for LTO support
+    let linker = getLinkerPath();
+
+    // TODO: Implement process execution
+    return {
+        exitCode: 0,
+        stdout: "",
+        stderr: ""
+    };
+}
+
+function getLinkerPath(): string {
+    // Try to find clang or lld
+    // TODO: Implement linker detection
+    return "clang";
+}
+
+function stripBinary(path: string): void {
+    // TODO: Implement binary stripping
+    // On macOS: strip -x path
+    // On Linux: strip --strip-all path
+}
+
+export { linkBinary, LinkOptions, LinkResult };

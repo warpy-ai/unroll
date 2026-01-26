@@ -1,0 +1,86 @@
+// CLI argument parsing
+
+interface ParsedArgs {
+    command: string;
+    args: string[];
+    help: boolean;
+    version: boolean;
+}
+
+function parseArgs(args: string[]): ParsedArgs {
+    let result: ParsedArgs = {
+        command: "",
+        args: [],
+        help: false,
+        version: false
+    };
+
+    let i = 0;
+    while (i < args.length) {
+        let arg = args[i];
+
+        if (arg == "--help" || arg == "-h") {
+            result.help = true;
+        } else if (arg == "--version" || arg == "-V") {
+            result.version = true;
+        } else if (arg[0] != "-" && result.command == "") {
+            result.command = arg;
+        } else {
+            result.args.push(arg);
+        }
+
+        i = i + 1;
+    }
+
+    return result;
+}
+
+function showHelp(): void {
+    console.log("Unroll - Package Manager and Build System for Script");
+    console.log("");
+    console.log("USAGE:");
+    console.log("    unroll [OPTIONS] <COMMAND>");
+    console.log("");
+    console.log("OPTIONS:");
+    console.log("    -h, --help       Show this help message");
+    console.log("    -V, --version    Show version");
+    console.log("");
+    console.log("COMMANDS:");
+    console.log("    Project Management:");
+    console.log("        new <name>       Create a new project");
+    console.log("        init             Initialize in current directory");
+    console.log("");
+    console.log("    Dependency Management:");
+    console.log("        add <pkg>        Add a dependency");
+    console.log("        remove <pkg>     Remove a dependency");
+    console.log("        update [pkg]     Update dependencies");
+    console.log("");
+    console.log("    Build & Run:");
+    console.log("        build            Build the project");
+    console.log("        run              Build and run");
+    console.log("        watch            Watch for changes and rebuild");
+    console.log("        clean            Remove build artifacts");
+    console.log("");
+    console.log("    Testing:");
+    console.log("        test             Run tests");
+    console.log("");
+    console.log("    Developer Tools:");
+    console.log("        fmt              Format code");
+    console.log("        lint             Run linter");
+    console.log("        check            Type check");
+    console.log("        doc              Generate documentation");
+    console.log("");
+    console.log("    Registry:");
+    console.log("        search <query>   Search packages");
+    console.log("        info <pkg>       Show package info");
+    console.log("        login            Login to registry");
+    console.log("        publish          Publish a package");
+    console.log("");
+    console.log("Run 'unroll <command> --help' for more info on a command.");
+}
+
+function showVersion(version: string): void {
+    console.log("unroll " + version);
+}
+
+export { ParsedArgs, parseArgs, showHelp, showVersion };

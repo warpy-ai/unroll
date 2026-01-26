@@ -1,0 +1,293 @@
+// Build commands: build, run, watch, clean
+
+import { loadManifest, Manifest } from "../config/manifest.tscl";
+import { loadLockfile, Lockfile } from "../config/lockfile.tscl";
+import { compileSources } from "../build/compiler.tscl";
+import { linkBinary } from "../build/linker.tscl";
+
+// ============================================================================
+// unroll build
+// ============================================================================
+
+interface BuildOptions {
+    release: boolean;
+    dist: boolean;
+    target: string;
+    jobs: number;
+    verbose: boolean;
+}
+
+function parseBuildArgs(args: string[]): BuildOptions {
+    let options: BuildOptions = {
+        release: false,
+        dist: false,
+        target: "native",
+        jobs: 0,  // 0 = auto-detect
+        verbose: false
+    };
+
+    let i = 0;
+    while (i < args.length) {
+        let arg = args[i];
+
+        if (arg == "--release" || arg == "-r") {
+            options.release = true;
+        } else if (arg == "--dist") {
+            options.dist = true;
+            options.release = true;  // dist implies release
+        } else if (arg == "--target") {
+            i = i + 1;
+            if (i < args.length) {
+                options.target = args[i];
+            }
+        } else if (arg == "--jobs" || arg == "-j") {
+            i = i + 1;
+            if (i < args.length) {
+                options.jobs = parseInt(args[i]);
+            }
+        } else if (arg == "--verbose" || arg == "-v") {
+            options.verbose = true;
+        }
+
+        i = i + 1;
+    }
+
+    return options;
+}
+
+function runBuild(args: string[]): number {
+    let options = parseBuildArgs(args);
+
+    // Load manifest
+    let manifest = loadManifest("./unroll.toml");
+    if (manifest == null) {
+        console.error("Error: could not find unroll.toml");
+        return 1;
+    }
+
+    // Load lockfile
+    let lockfile = loadLockfile("./unroll.lock");
+
+    let profile = "dev";
+    if (options.dist) {
+        profile = "dist";
+    } else if (options.release) {
+        profile = "release";
+    }
+
+    console.log("Building " + manifest.name + " (" + profile + ")...");
+
+    // Compile sources
+    let compileResult = compileSources(manifest, lockfile, {
+        profile: profile,
+        target: options.target,
+        jobs: options.jobs,
+        verbose: options.verbose
+    });
+
+    if (!compileResult.success) {
+        console.error("Compilation failed: " + compileResult.error);
+        return 1;
+    }
+
+    // Link binary
+    let linkResult = linkBinary(manifest, compileResult.objects, {
+        profile: profile,
+        target: options.target
+    });
+
+    if (!linkResult.success) {
+        console.error("Linking failed: " + linkResult.error);
+        return 1;
+    }
+
+    let outputPath = "./target/" + profile + "/" + manifest.name;
+    console.log("Built: " + outputPath);
+
+    return 0;
+}
+
+// ============================================================================
+// unroll run
+// ============================================================================
+
+interface RunOptions {
+    release: boolean;
+    args: string[];
+}
+
+function parseRunArgs(args: string[]): RunOptions {
+    let options: RunOptions = {
+        release: false,
+        args: []
+    };
+
+    let foundSeparator = false;
+    let i = 0;
+    while (i < args.length) {
+        let arg = args[i];
+
+        if (arg == "--") {
+            foundSeparator = true;
+        } else if (foundSeparator) {
+            options.args.push(arg);
+        } else if (arg == "--release" || arg == "-r") {
+            options.release = true;
+        }
+
+        i = i + 1;
+    }
+
+    return options;
+}
+
+function runRun(args: string[]): number {
+    let options = parseRunArgs(args);
+
+    // Build first
+    let buildArgs: string[] = [];
+    if (options.release) {
+        buildArgs.push("--release");
+    }
+
+    let buildResult = runBuild(buildArgs);
+    if (buildResult != 0) {
+        return buildResult;
+    }
+
+    // Load manifest for binary name
+    let manifest = loadManifest("./unroll.toml");
+    if (manifest == null) {
+        return 1;
+    }
+
+    let profile = options.release ? "release" : "dev";
+    let binaryPath = "./target/" + profile + "/" + manifest.name;
+
+    console.log("");
+    console.log("Running " + binaryPath + "...");
+    console.log("");
+
+    // Execute the binary
+    let exitCode = executeProcess(binaryPath, options.args);
+    return exitCode;
+}
+
+function executeProcess(path: string, args: string[]): number {
+    // TODO: Implement process execution
+    return 0;
+}
+
+// ============================================================================
+// unroll watch
+// ============================================================================
+
+interface WatchOptions {
+    release: boolean;
+    run: boolean;
+}
+
+function parseWatchArgs(args: string[]): WatchOptions {
+    let options: WatchOptions = {
+        release: false,
+        run: false
+    };
+
+    let i = 0;
+    while (i < args.length) {
+        let arg = args[i];
+
+        if (arg == "--release" || arg == "-r") {
+            options.release = true;
+        } else if (arg == "--run") {
+            options.run = true;
+        }
+
+        i = i + 1;
+    }
+
+    return options;
+}
+
+function runWatch(args: string[]): number {
+    let options = parseWatchArgs(args);
+
+    console.log("Watching for changes...");
+    console.log("Press Ctrl+C to stop");
+    console.log("");
+
+    // Initial build
+    let buildArgs: string[] = [];
+    if (options.release) {
+        buildArgs.push("--release");
+    }
+    runBuild(buildArgs);
+
+    // Watch loop
+    // TODO: Implement file watcher
+    watchFiles("./src", () => {
+        console.log("");
+        console.log("Change detected, rebuilding...");
+        runBuild(buildArgs);
+
+        if (options.run) {
+            // Restart the process
+            let manifest = loadManifest("./unroll.toml");
+            if (manifest != null) {
+                let profile = options.release ? "release" : "dev";
+                let binaryPath = "./target/" + profile + "/" + manifest.name;
+                executeProcess(binaryPath, []);
+            }
+        }
+    });
+
+    return 0;
+}
+
+function watchFiles(path: string, callback: () => void): void {
+    // TODO: Implement file watcher using fs events
+}
+
+// ============================================================================
+// unroll clean
+// ============================================================================
+
+function runClean(args: string[]): number {
+    console.log("Cleaning build artifacts...");
+
+    // Remove target directory
+    let result = removeDirectory("./target");
+    if (!result.success) {
+        console.error("Error cleaning: " + result.error);
+        return 1;
+    }
+
+    console.log("Cleaned");
+    return 0;
+}
+
+interface Result {
+    success: boolean;
+    error: string;
+}
+
+function removeDirectory(path: string): Result {
+    // TODO: Implement directory removal
+    return { success: true, error: "" };
+}
+
+function parseInt(s: string): number {
+    // Simple parseInt implementation
+    let result = 0;
+    let i = 0;
+    while (i < s.length) {
+        let c = s[i];
+        if (c >= "0" && c <= "9") {
+            result = result * 10 + (c.charCodeAt(0) - "0".charCodeAt(0));
+        }
+        i = i + 1;
+    }
+    return result;
+}
+
+export { runBuild, runRun, runWatch, runClean, BuildOptions };
