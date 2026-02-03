@@ -1,6 +1,6 @@
 // unroll init - Initialize a project in existing directory
 
-import { createManifest } from "../config/manifest.tscl";
+import { createManifest } from "../config/manifest.ot";
 
 interface InitOptions {
     name: string;
@@ -68,7 +68,7 @@ function runInit(args: string[]): number {
     }
 
     // Create main file if it doesn't exist
-    let mainFile = options.lib ? "./src/lib.tscl" : "./src/main.tscl";
+    let mainFile = options.lib ? "./src/lib.ot" : "./src/main.ot";
     if (!fileExists(mainFile)) {
         let content = options.lib ? getLibTemplate(projectName) : getMainTemplate();
         result = writeFile(mainFile, content);
@@ -129,7 +129,7 @@ function getMainTemplate(): string {
     return `// Main entry point
 
 function main(): void {
-    console.log("Hello, Script!");
+    console.log("Hello, Oite!");
 }
 
 main();

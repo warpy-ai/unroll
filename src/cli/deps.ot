@@ -1,8 +1,8 @@
 // Dependency management commands: add, remove, update
 
-import { loadManifest, saveManifest, Manifest } from "../config/manifest.tscl";
-import { resolveDependencies } from "../resolver/mod.tscl";
-import { writeLockfile } from "../config/lockfile.tscl";
+import { loadManifest, saveManifest, Manifest } from "../config/manifest.ot";
+import { resolveDependencies } from "../resolver/mod.ot";
+import { writeLockfile } from "../config/lockfile.ot";
 
 // ============================================================================
 // unroll add

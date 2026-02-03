@@ -38,15 +38,15 @@ function discoverTests(dir: string, filter: string): TestFile[] {
 }
 
 function isTestFile(filename: string): boolean {
-    // Test files end with _test.tscl or .test.tscl
-    if (filename.indexOf("_test.tscl") == filename.length - 10) {
+    // Test files end with _test.ot or .test.ot
+    if (filename.indexOf("_test.ot") == filename.length - 10) {
         return true;
     }
-    if (filename.indexOf(".test.tscl") == filename.length - 10) {
+    if (filename.indexOf(".test.ot") == filename.length - 10) {
         return true;
     }
-    // Or are in tests/ directory and end with .tscl
-    if (filename.indexOf(".tscl") == filename.length - 5) {
+    // Or are in tests/ directory and end with .ot
+    if (filename.indexOf(".ot") == filename.length - 5) {
         return true;
     }
     return false;
@@ -60,7 +60,7 @@ function getTestName(filename: string): string {
     }
 
     // Remove extension
-    if (filename.indexOf(".tscl") == filename.length - 5) {
+    if (filename.indexOf(".ot") == filename.length - 5) {
         filename = filename.substring(0, filename.length - 5);
     }
 

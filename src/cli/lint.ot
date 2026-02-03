@@ -1,6 +1,6 @@
 // unroll lint - Run linter
 
-import { loadManifest } from "../config/manifest.tscl";
+import { loadManifest } from "../config/manifest.ot";
 
 interface LintOptions {
     fix: boolean;
@@ -43,7 +43,7 @@ function parseLintArgs(args: string[]): LintOptions {
 function runLint(args: string[]): number {
     let options = parseLintArgs(args);
 
-    // If no files specified, lint all .tscl files
+    // If no files specified, lint all .ot files
     let files = options.files;
     if (files.length == 0) {
         files = discoverSourceFiles("./src");

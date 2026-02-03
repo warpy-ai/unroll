@@ -1,6 +1,6 @@
 // Linker - link object files into final binary
 
-import { Manifest } from "../config/manifest.tscl";
+import { Manifest } from "../config/manifest.ot";
 
 interface LinkOptions {
     profile: string;

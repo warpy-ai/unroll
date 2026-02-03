@@ -1,7 +1,7 @@
 // unroll new - Create a new project
 
-import { createManifest } from "../config/manifest.tscl";
-import { createDirectoryStructure } from "../config/scaffold.tscl";
+import { createManifest } from "../config/manifest.ot";
+import { createDirectoryStructure } from "../config/scaffold.ot";
 
 interface NewOptions {
     name: string;

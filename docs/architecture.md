@@ -1,6 +1,6 @@
 # Unroll Architecture
 
-This document describes the internal architecture of Unroll, the package manager and build system for Script.
+This document describes the internal architecture of Unroll, the package manager and build system for Oite.
 
 ## Overview
 
@@ -9,7 +9,7 @@ Unroll is designed as a modular system with clear separation of concerns:
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                         CLI Layer                           │
-│  src/cli/*.tscl - Command parsing and orchestration         │
+│  src/cli/*.ot - Command parsing and orchestration           │
 └─────────────────────────────┬───────────────────────────────┘
                               │
 ┌─────────────────────────────▼───────────────────────────────┐
@@ -30,8 +30,8 @@ Unroll is designed as a modular system with clear separation of concerns:
 └─────────────────────────────┬───────────────────────────────┘
                               │
 ┌─────────────────────────────▼───────────────────────────────┐
-│                    Script Compiler                          │
-│  External: scriptc binary for actual compilation            │
+│                     Oite Compiler                           │
+│  External: oitec binary for actual compilation              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -39,32 +39,32 @@ Unroll is designed as a modular system with clear separation of concerns:
 
 ```
 src/
-├── main.tscl           # Entry point, command dispatch
+├── main.ot           # Entry point, command dispatch
 ├── cli/                # CLI command implementations
-│   ├── args.tscl       # Argument parsing
-│   ├── new.tscl        # unroll new
-│   ├── init.tscl       # unroll init
-│   ├── deps.tscl       # add/remove/update
-│   ├── build.tscl      # build/run/watch/clean
-│   ├── test.tscl       # test runner
-│   ├── fmt.tscl        # code formatter
-│   ├── lint.tscl       # linter
-│   ├── check.tscl      # type checker
-│   ├── doc.tscl        # documentation generator
-│   └── registry.tscl   # search/info/publish/login
+│   ├── args.ot       # Argument parsing
+│   ├── new.ot        # unroll new
+│   ├── init.ot       # unroll init
+│   ├── deps.ot       # add/remove/update
+│   ├── build.ot      # build/run/watch/clean
+│   ├── test.ot       # test runner
+│   ├── fmt.ot        # code formatter
+│   ├── lint.ot       # linter
+│   ├── check.ot      # type checker
+│   ├── doc.ot        # documentation generator
+│   └── registry.ot   # search/info/publish/login
 ├── config/             # Configuration handling
-│   ├── manifest.tscl   # unroll.toml parsing
-│   ├── lockfile.tscl   # unroll.lock parsing
-│   └── scaffold.tscl   # project scaffolding
+│   ├── manifest.ot   # unroll.toml parsing
+│   ├── lockfile.ot   # unroll.lock parsing
+│   └── scaffold.ot   # project scaffolding
 ├── resolver/           # Dependency resolution
-│   └── mod.tscl        # Version resolution algorithm
+│   └── mod.ot        # Version resolution algorithm
 ├── registry/           # Package registry client
-│   ├── client.tscl     # HTTP client for registry
-│   └── config.tscl     # Registry configuration
+│   ├── client.ot     # HTTP client for registry
+│   └── config.ot     # Registry configuration
 ├── build/              # Build system
-│   ├── compiler.tscl   # Compiler interface
-│   ├── linker.tscl     # Linking and LTO
-│   └── test_discovery.tscl
+│   ├── compiler.ot   # Compiler interface
+│   ├── linker.ot     # Linking and LTO
+│   └── test_discovery.ot
 └── lsp/                # Language Server Protocol
     └── (future)
 ```
@@ -133,7 +133,7 @@ Communicates with the package registry:
 Orchestrates the compilation process:
 
 ```
-Source Files (.tscl)
+Source Files (.ot)
         │
         ▼
 ┌───────────────────┐

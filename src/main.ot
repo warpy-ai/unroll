@@ -1,17 +1,17 @@
-// Unroll - Package Manager and Build System for Script
+// Unroll - Package Manager and Build System for Oite
 // Entry point for the CLI
 
-import { parseArgs, showHelp, showVersion } from "./cli/args.tscl";
-import { runNew } from "./cli/new.tscl";
-import { runInit } from "./cli/init.tscl";
-import { runAdd, runRemove, runUpdate } from "./cli/deps.tscl";
-import { runBuild, runRun, runWatch, runClean } from "./cli/build.tscl";
-import { runTest } from "./cli/test.tscl";
-import { runFmt } from "./cli/fmt.tscl";
-import { runLint } from "./cli/lint.tscl";
-import { runCheck } from "./cli/check.tscl";
-import { runDoc } from "./cli/doc.tscl";
-import { runSearch, runInfo, runPublish, runLogin } from "./cli/registry.tscl";
+import { parseArgs, showHelp, showVersion } from "./cli/args.ot";
+import { runNew } from "./cli/new.ot";
+import { runInit } from "./cli/init.ot";
+import { runAdd, runRemove, runUpdate } from "./cli/deps.ot";
+import { runBuild, runRun, runWatch, runClean } from "./cli/build.ot";
+import { runTest } from "./cli/test.ot";
+import { runFmt } from "./cli/fmt.ot";
+import { runLint } from "./cli/lint.ot";
+import { runCheck } from "./cli/check.ot";
+import { runDoc } from "./cli/doc.ot";
+import { runSearch, runInfo, runPublish, runLogin } from "./cli/registry.ot";
 
 const VERSION = "0.1.0";
 

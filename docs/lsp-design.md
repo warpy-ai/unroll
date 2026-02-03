@@ -4,7 +4,7 @@ This document describes the planned design for the Unroll Language Server Protoc
 
 ## Overview
 
-The LSP server provides IDE integration for Script, including:
+The LSP server provides IDE integration for Oite, including:
 
 - Real-time diagnostics (type errors, lint warnings)
 - Auto-completion
@@ -90,28 +90,28 @@ The LSP server provides IDE integration for Script, including:
 
 ```
 src/lsp/
-├── mod.tscl              # Main LSP server
-├── transport.tscl        # JSON-RPC transport
-├── messages.tscl         # LSP message types
-├── capabilities.tscl     # Server capabilities
+├── mod.ot              # Main LSP server
+├── transport.ot        # JSON-RPC transport
+├── messages.ot         # LSP message types
+├── capabilities.ot     # Server capabilities
 ├── handlers/
-│   ├── lifecycle.tscl    # init/shutdown
-│   ├── document.tscl     # didOpen/didChange/etc
-│   ├── completion.tscl   # Auto-complete
-│   ├── hover.tscl        # Hover info
-│   ├── definition.tscl   # Go to definition
-│   ├── references.tscl   # Find references
-│   ├── rename.tscl       # Rename symbol
-│   ├── formatting.tscl   # Code formatting
-│   └── diagnostics.tscl  # Error reporting
+│   ├── lifecycle.ot    # init/shutdown
+│   ├── document.ot     # didOpen/didChange/etc
+│   ├── completion.ot   # Auto-complete
+│   ├── hover.ot        # Hover info
+│   ├── definition.ot   # Go to definition
+│   ├── references.ot   # Find references
+│   ├── rename.ot       # Rename symbol
+│   ├── formatting.ot   # Code formatting
+│   └── diagnostics.ot  # Error reporting
 ├── analysis/
-│   ├── parser.tscl       # Incremental parser
-│   ├── typecheck.tscl    # Type checking
-│   ├── symbols.tscl      # Symbol table
-│   └── index.tscl        # Cross-reference index
+│   ├── parser.ot       # Incremental parser
+│   ├── typecheck.ot    # Type checking
+│   ├── symbols.ot      # Symbol table
+│   └── index.ot        # Cross-reference index
 └── util/
-    ├── position.tscl     # Position conversion
-    └── uri.tscl          # URI handling
+    ├── position.ot     # Position conversion
+    └── uri.ot          # URI handling
 ```
 
 ## Completion
@@ -173,7 +173,7 @@ src/lsp/
 
 ```json
 {
-  "uri": "file:///project/src/main.tscl",
+  "uri": "file:///project/src/main.ot",
   "diagnostics": [
     {
       "range": {
@@ -245,7 +245,7 @@ Document Change
 ```lua
 require('lspconfig').unroll.setup {
   cmd = { 'unroll', 'lsp' },
-  filetypes = { 'tscl', 'script' },
+  filetypes = { 'ot', 'oite' },
   root_dir = function(fname)
     return lspconfig.util.root_pattern('unroll.toml')(fname)
   end,

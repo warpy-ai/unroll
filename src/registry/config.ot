@@ -7,7 +7,7 @@ interface RegistryConfig {
 
 function getRegistryConfig(): RegistryConfig {
     let config: RegistryConfig = {
-        url: "https://rolls.script-lang.org",
+        url: "https://registry.oite.org",
         token: ""
     };
 

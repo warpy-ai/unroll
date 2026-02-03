@@ -6,9 +6,9 @@ Thank you for your interest in contributing to Unroll! This document provides gu
 
 ### Prerequisites
 
-- Script compiler (`scriptc`) installed
+- Oite compiler (`oitec`) installed
 - Git for version control
-- A text editor or IDE with Script support
+- A text editor or IDE with Oite support
 
 ### Setting Up the Development Environment
 
@@ -20,7 +20,7 @@ Thank you for your interest in contributing to Unroll! This document provides gu
 
 2. Build the project:
    ```bash
-   scriptc build src/main.tscl -o unroll
+   oitec build src/main.ot -o unroll
    ```
 
 3. Run tests:
@@ -134,12 +134,12 @@ function compileSources(options: BuildOptions): CompileResult {
 
 ### Writing Tests
 
-Create test files in the `tests/` directory with the naming convention `*_test.tscl`:
+Create test files in the `tests/` directory with the naming convention `*_test.ot`:
 
 ```typescript
-// tests/resolver_test.tscl
+// tests/resolver_test.ot
 
-import { resolveDependencies } from "../src/resolver/mod.tscl";
+import { resolveDependencies } from "../src/resolver/mod.ot";
 
 function testBasicResolution(): boolean {
     let manifest = createTestManifest();
@@ -205,7 +205,7 @@ Include:
 - Steps to reproduce
 - Expected behavior
 - Actual behavior
-- Environment (OS, Script version, Unroll version)
+- Environment (OS, Oite version, Unroll version)
 - Error messages and logs
 
 ### Feature Requests
@@ -222,7 +222,7 @@ Include:
 ```
 unroll/
 ├── src/
-│   ├── main.tscl           # Entry point
+│   ├── main.ot             # Entry point
 │   ├── cli/                # CLI commands
 │   ├── config/             # Configuration handling
 │   ├── resolver/           # Dependency resolution

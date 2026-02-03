@@ -1,9 +1,9 @@
 // Build commands: build, run, watch, clean
 
-import { loadManifest, Manifest } from "../config/manifest.tscl";
-import { loadLockfile, Lockfile } from "../config/lockfile.tscl";
-import { compileSources } from "../build/compiler.tscl";
-import { linkBinary } from "../build/linker.tscl";
+import { loadManifest, Manifest } from "../config/manifest.ot";
+import { loadLockfile, Lockfile } from "../config/lockfile.ot";
+import { compileSources } from "../build/compiler.ot";
+import { linkBinary } from "../build/linker.ot";
 
 // ============================================================================
 // unroll build

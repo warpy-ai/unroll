@@ -69,7 +69,7 @@ function publishPackage(name: string, version: string, tarball: string, token: s
 
 function getRegistryUrl(): string {
     // TODO: Read from config
-    return "https://rolls.script-lang.org";
+    return "https://registry.oite.org";
 }
 
 function encodePackageName(name: string): string {

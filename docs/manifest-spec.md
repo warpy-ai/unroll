@@ -1,6 +1,6 @@
 # Unroll Manifest Specification (unroll.toml)
 
-This document describes the `unroll.toml` manifest file format used to configure Script projects.
+This document describes the `unroll.toml` manifest file format used to configure Oite projects.
 
 ## Overview
 
@@ -21,7 +21,7 @@ Required package metadata.
 [package]
 name = "my-app"                     # Required: Package name
 version = "0.1.0"                   # Required: SemVer version
-edition = "2025"                    # Script language edition
+edition = "2026"                    # Oite language edition
 license = "MIT"                     # SPDX license identifier
 description = "Short description"  # Package description
 repository = "https://..."          # Source repository URL
@@ -38,7 +38,7 @@ no-std = false                      # Disable implicit @rolls/std prelude
 
 #### Standard Library Prelude
 
-By default, all Script projects implicitly include `@rolls/std`, which provides commonly used functions from the standard library (string manipulation, array methods, math, JSON, etc.). This is similar to Rust's prelude.
+By default, all Oite projects implicitly include `@rolls/std`, which provides commonly used functions from the standard library (string manipulation, array methods, math, JSON, etc.). This is similar to Rust's prelude.
 
 To disable the implicit prelude:
 
@@ -67,16 +67,16 @@ name = "my-app"
 # Library
 [lib]
 name = "my_lib"
-path = "src/lib.tscl"
+path = "src/lib.ot"
 
 # Both binary and library
 [[bin]]
 name = "my-app"
-path = "src/main.tscl"
+path = "src/main.ot"
 
 [lib]
 name = "my_lib"
-path = "src/lib.tscl"
+path = "src/lib.ot"
 ```
 
 ### [dependencies]
@@ -284,7 +284,7 @@ name = "my-web-server"
 version = "1.0.0"
 edition = "2025"
 license = "MIT"
-description = "A fast web server built with Script"
+description = "A fast web server built with Oite"
 repository = "https://github.com/example/my-web-server"
 keywords = ["web", "server", "http"]
 authors = ["Developer <dev@example.com>"]
@@ -315,9 +315,9 @@ strip = "all"
 
 [[bin]]
 name = "server"
-path = "src/main.tscl"
+path = "src/main.ot"
 
 [lib]
 name = "my_web_server"
-path = "src/lib.tscl"
+path = "src/lib.ot"
 ```

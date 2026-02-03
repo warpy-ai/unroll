@@ -36,7 +36,7 @@ function parseArgs(args: string[]): ParsedArgs {
 }
 
 function showHelp(): void {
-    console.log("Unroll - Package Manager and Build System for Script");
+    console.log("Unroll - Package Manager and Build System for Oite");
     console.log("");
     console.log("USAGE:");
     console.log("    unroll [OPTIONS] <COMMAND>");

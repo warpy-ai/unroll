@@ -1,6 +1,6 @@
 <div align="center">
   <h1>Unroll</h1>
-  <p>Package Manager, Build System, and Developer Tooling for Script</p>
+  <p>Package Manager, Build System, and Developer Tooling for Oite</p>
 
   <br/>
 
@@ -12,7 +12,7 @@
 
 ## Overview
 
-**Unroll** is the package manager, build system, and developer tooling ecosystem for the [Script](https://github.com/aspect-build/script) language. It manages Rolls dependencies, handles compilation, and provides developer experience features like LSP support.
+**Unroll** is the package manager, build system, and developer tooling ecosystem for the [Oite](https://github.com/aspect-build/oite) language. It manages Rolls dependencies, handles compilation, and provides developer experience features like LSP support.
 
 ```
 ┌─────────────────────────────────────────┐
@@ -30,7 +30,7 @@
 └──────────────────┬──────────────────────┘
                    │
 ┌──────────────────▼──────────────────────┐
-│   Script (language core)                │
+│   Oite (language core)                  │
 │   compiler, type system, ABI, bootstrap │
 └─────────────────────────────────────────┘
 ```
@@ -38,7 +38,7 @@
 ## Features
 
 - **Dependency Management** - Add, update, and remove Rolls with lockfile support
-- **Build System** - Compile Script projects to native binaries with LTO
+- **Build System** - Compile Oite projects to native binaries with LTO
 - **Cross-Compilation** - Target multiple platforms from a single machine
 - **Language Server** - Full LSP support for IDE integration
 - **Code Formatting** - Built-in formatter (`unroll fmt`)
@@ -55,7 +55,7 @@
 cargo install --path .
 
 # Or download prebuilt binary
-curl -fsSL https://script-lang.org/install-unroll.sh | sh
+curl -fsSL https://oite-lang.org/install-unroll.sh | sh
 ```
 
 ### Create a New Project
@@ -76,14 +76,14 @@ my-app/
 ├── unroll.toml         # Project manifest
 ├── unroll.lock         # Lockfile (auto-generated)
 ├── src/
-│   ├── main.tscl       # Entry point
-│   └── lib.tscl        # Library root (for --lib projects)
+│   ├── main.ot         # Entry point
+│   └── lib.ot          # Library root (for --lib projects)
 ├── tests/
-│   └── integration_test.tscl
+│   └── integration_test.ot
 ├── benches/
-│   └── perf_bench.tscl
+│   └── perf_bench.ot
 ├── examples/
-│   └── basic_usage.tscl
+│   └── basic_usage.ot
 └── target/
     ├── debug/
     │   └── my-app      # Debug binary
@@ -168,7 +168,7 @@ unroll deprecate <version>          # Deprecate a version
 [package]
 name = "my-app"
 version = "0.1.0"
-edition = "2025"
+edition = "2026"
 license = "MIT"
 description = "My awesome app"
 repository = "https://github.com/example/my-app"
@@ -216,7 +216,7 @@ Unroll automatically generates and maintains a lockfile for reproducible builds:
 [[package]]
 name = "@rolls/http"
 version = "0.1.5"
-source = "registry+https://rolls.script-lang.org"
+source = "registry+https://registry.oite.org"
 checksum = "sha256:abcd1234..."
 dependencies = [
     "@rolls/async 0.1.2",
@@ -226,7 +226,7 @@ dependencies = [
 [[package]]
 name = "@rolls/async"
 version = "0.1.2"
-source = "registry+https://rolls.script-lang.org"
+source = "registry+https://registry.oite.org"
 checksum = "sha256:efgh5678..."
 ```
 
@@ -281,7 +281,7 @@ unroll build --target aarch64-unknown-linux-gnu
 
 ### Public Registry
 
-The default registry is at `https://rolls.script-lang.org`.
+The default registry is at `https://registry.oite.org`.
 
 ### Private Registry
 
@@ -290,7 +290,7 @@ Configure private registries for enterprise use:
 ```toml
 # ~/.unroll/config.toml
 [registries]
-default = "https://rolls.script-lang.org"
+default = "https://registry.oite.org"
 company = "https://rolls.company.internal"
 
 [registries.company]
@@ -325,7 +325,7 @@ token = "env:COMPANY_REGISTRY_TOKEN"
 
 ## Related Projects
 
-- [Script](https://github.com/aspect-build/script) - The Script language compiler
+- [Oite](https://github.com/aspect-build/oite) - The Oite language compiler
 - [Rolls](https://github.com/aspect-build/rolls) - Official system libraries
 
 ## Contributing

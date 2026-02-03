@@ -31,7 +31,7 @@ function createDirectoryStructure(path: string, isLib: boolean): ScaffoldResult 
     }
 
     // Create main source file
-    let mainFile = isLib ? "/src/lib.tscl" : "/src/main.tscl";
+    let mainFile = isLib ? "/src/lib.ot" : "/src/main.ot";
     let mainContent = isLib ? getLibTemplate() : getMainTemplate();
     result = writeFile(path + mainFile, mainContent);
     if (!result.success) {
@@ -51,7 +51,7 @@ function getMainTemplate(): string {
     return `// Main entry point
 
 function main(): void {
-    console.log("Hello, Script!");
+    console.log("Hello, Oite!");
 }
 
 main();

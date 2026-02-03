@@ -1,6 +1,6 @@
 // unroll doc - Generate documentation
 
-import { loadManifest } from "../config/manifest.tscl";
+import { loadManifest } from "../config/manifest.ot";
 
 interface DocOptions {
     open: boolean;
@@ -201,12 +201,12 @@ function extractExports(content: string, includePrivate: boolean): Exports {
 }
 
 function fileToModuleName(file: string): string {
-    // Convert ./src/foo/bar.tscl to foo/bar
+    // Convert ./src/foo/bar.ot to foo/bar
     let name = file;
     if (name.indexOf("./src/") == 0) {
         name = name.substring(6);
     }
-    if (name.indexOf(".tscl") == name.length - 5) {
+    if (name.indexOf(".ot") == name.length - 5) {
         name = name.substring(0, name.length - 5);
     }
     return name;

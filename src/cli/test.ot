@@ -1,7 +1,7 @@
 // unroll test - Run project tests
 
-import { loadManifest, Manifest } from "../config/manifest.tscl";
-import { discoverTests } from "../build/test_discovery.tscl";
+import { loadManifest, Manifest } from "../config/manifest.ot";
+import { discoverTests } from "../build/test_discovery.ot";
 
 interface TestOptions {
     filter: string;

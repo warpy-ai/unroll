@@ -1,6 +1,6 @@
 // unroll fmt - Format code
 
-import { loadManifest } from "../config/manifest.tscl";
+import { loadManifest } from "../config/manifest.ot";
 
 interface FmtOptions {
     check: boolean;
@@ -36,7 +36,7 @@ function parseFmtArgs(args: string[]): FmtOptions {
 function runFmt(args: string[]): number {
     let options = parseFmtArgs(args);
 
-    // If no files specified, format all .tscl files in src/
+    // If no files specified, format all .ot files in src/
     let files = options.files;
     if (files.length == 0) {
         files = discoverSourceFiles("./src");

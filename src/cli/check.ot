@@ -1,7 +1,7 @@
 // unroll check - Type check project
 
-import { loadManifest } from "../config/manifest.tscl";
-import { loadLockfile } from "../config/lockfile.tscl";
+import { loadManifest } from "../config/manifest.ot";
+import { loadLockfile } from "../config/lockfile.ot";
 
 interface CheckOptions {
     verbose: boolean;
@@ -121,7 +121,7 @@ function typeCheckFile(path: string): TypeCheckResult {
         };
     }
 
-    // TODO: Implement actual type checking by calling Script compiler
+    // TODO: Implement actual type checking by calling Oite compiler
     // For now, return empty result
     return {
         errors: [],

@@ -1,8 +1,8 @@
 // Dependency resolver - resolve package versions and build dependency graph
 
-import { Manifest, Dependency } from "../config/manifest.tscl";
-import { LockedPackage } from "../config/lockfile.tscl";
-import { fetchPackageVersions, PackageVersion } from "../registry/client.tscl";
+import { Manifest, Dependency } from "../config/manifest.ot";
+import { LockedPackage } from "../config/lockfile.ot";
+import { fetchPackageVersions, PackageVersion } from "../registry/client.ot";
 
 interface ResolveResult {
     packages: LockedPackage[];
@@ -122,7 +122,7 @@ function resolveSingle(dep: Dependency, visited: string[], resolved: LockedPacka
     resolved.push({
         name: dep.name,
         version: selected.version,
-        source: "registry+https://rolls.script-lang.org",
+        source: "registry+https://registry.oite.org",
         checksum: selected.checksum,
         dependencies: depNames
     });

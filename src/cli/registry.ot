@@ -1,9 +1,9 @@
 // Registry commands: search, info, publish, login
 
-import { loadManifest } from "../config/manifest.tscl";
-import { getRegistryConfig, RegistryConfig } from "../registry/config.tscl";
+import { loadManifest } from "../config/manifest.ot";
+import { getRegistryConfig, RegistryConfig } from "../registry/config.ot";
 
-const DEFAULT_REGISTRY = "https://rolls.script-lang.org";
+const DEFAULT_REGISTRY = "https://registry.oite.org";
 
 // ============================================================================
 // unroll search

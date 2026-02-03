@@ -1,7 +1,7 @@
-// Compiler integration - interface with Script compiler
+// Compiler integration - interface with Oite compiler
 
-import { Manifest } from "../config/manifest.tscl";
-import { Lockfile } from "../config/lockfile.tscl";
+import { Manifest } from "../config/manifest.ot";
+import { Lockfile } from "../config/lockfile.ot";
 
 interface CompileOptions {
     profile: string;       // "dev" | "release" | "dist"
@@ -128,7 +128,7 @@ function discoverSources(dir: string): string[] {
 }
 
 function getObjectPath(source: string, outputDir: string): string {
-    // Convert ./src/foo/bar.tscl to ./target/profile/foo_bar.o
+    // Convert ./src/foo/bar.ot to ./target/profile/foo_bar.o
     let name = source;
 
     // Remove ./src/ prefix
@@ -139,8 +139,8 @@ function getObjectPath(source: string, outputDir: string): string {
     // Replace / with _
     name = name.split("/").join("_");
 
-    // Replace .tscl with .o
-    if (name.indexOf(".tscl") == name.length - 5) {
+    // Replace .ot with .o
+    if (name.indexOf(".ot") == name.length - 5) {
         name = name.substring(0, name.length - 5) + ".o";
     }
 
