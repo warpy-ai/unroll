@@ -1,42 +1,48 @@
 // Registry configuration
+// Uses oite's built-in process.env and fs modules
 
 interface RegistryConfig {
     url: string;
     token: string;
 }
 
+// Default registry URL (testnet for development)
+const DEFAULT_REGISTRY = "http://localhost:3000/api/v1";
+
 function getRegistryConfig(): RegistryConfig {
     let config: RegistryConfig = {
-        url: "https://registry.oite.org",
+        url: DEFAULT_REGISTRY,
         token: ""
     };
 
     // Try to load from config file
     let configPath = getConfigPath();
-    let content = readFile(configPath);
-
-    if (content != null) {
-        let parsed = parseConfig(content);
-        if (parsed.url != "") {
-            config.url = parsed.url;
-        }
-        if (parsed.token != "") {
-            config.token = parsed.token;
+    if (fileExists(configPath)) {
+        let content = readFile(configPath);
+        if (content != null) {
+            let parsed = parseConfig(content);
+            if (parsed.url != "") {
+                config.url = parsed.url;
+            }
+            if (parsed.token != "") {
+                config.token = parsed.token;
+            }
         }
     }
 
     // Try to load token from credentials file
     let credPath = getCredentialsPath();
-    let credContent = readFile(credPath);
-
-    if (credContent != null) {
-        let token = parseCredentials(credContent, config.url);
-        if (token != "") {
-            config.token = token;
+    if (fileExists(credPath)) {
+        let credContent = readFile(credPath);
+        if (credContent != null) {
+            let token = parseCredentials(credContent, config.url);
+            if (token != "") {
+                config.token = token;
+            }
         }
     }
 
-    // Environment variable overrides
+    // Environment variable overrides (highest priority)
     let envToken = getEnv("UNROLL_TOKEN");
     if (envToken != "") {
         config.token = envToken;
@@ -66,6 +72,14 @@ function getCredentialsPath(): string {
     return home + "/.unroll/credentials";
 }
 
+function getUnrollDir(): string {
+    let home = getEnv("HOME");
+    if (home == "") {
+        home = getEnv("USERPROFILE");  // Windows
+    }
+    return home + "/.unroll";
+}
+
 function parseConfig(content: string): RegistryConfig {
     let config: RegistryConfig = {
         url: "",
@@ -89,7 +103,7 @@ function parseConfig(content: string): RegistryConfig {
             let value = line.substring(eqIndex + 1).trim();
 
             // Remove quotes
-            if (value[0] == "\"" && value[value.length - 1] == "\"") {
+            if (value.length >= 2 && value[0] == "\"" && value[value.length - 1] == "\"") {
                 value = value.substring(1, value.length - 1);
             }
 
@@ -124,6 +138,11 @@ function parseCredentials(content: string, registry: string): string {
             let url = line.substring(0, eqIndex).trim();
             let token = line.substring(eqIndex + 1).trim();
 
+            // Remove quotes from token
+            if (token.length >= 2 && token[0] == "\"" && token[token.length - 1] == "\"") {
+                token = token.substring(1, token.length - 1);
+            }
+
             if (url == registry || url == "default") {
                 return token;
             }
@@ -135,14 +154,63 @@ function parseCredentials(content: string, registry: string): string {
     return "";
 }
 
-function readFile(path: string): string | null {
-    // TODO: Implement file reading
-    return null;
+function saveCredentials(registry: string, token: string): boolean {
+    let unrollDir = getUnrollDir();
+
+    // Create .unroll directory if it doesn't exist
+    if (!fileExists(unrollDir)) {
+        fs.mkdirSync(unrollDir, { recursive: true });
+    }
+
+    let credPath = getCredentialsPath();
+    let content = registry + " = \"" + token + "\"\n";
+
+    return writeFile(credPath, content);
 }
+
+// ============================================================================
+// File I/O using oite's built-in fs module
+// ============================================================================
+
+function readFile(path: string): string | null {
+    try {
+        return fs.readFileSync(path);
+    } catch (e) {
+        return null;
+    }
+}
+
+function writeFile(path: string, content: string): boolean {
+    try {
+        fs.writeFileSync(path, content);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+function fileExists(path: string): boolean {
+    return fs.existsSync(path);
+}
+
+// ============================================================================
+// Environment variables using oite's built-in process module
+// ============================================================================
 
 function getEnv(name: string): string {
-    // TODO: Implement environment variable reading
-    return "";
+    let value = process.env.get(name);
+    if (value == undefined) {
+        return "";
+    }
+    return value;
 }
 
-export { RegistryConfig, getRegistryConfig };
+export {
+    RegistryConfig,
+    getRegistryConfig,
+    getConfigPath,
+    getCredentialsPath,
+    getUnrollDir,
+    saveCredentials,
+    DEFAULT_REGISTRY
+};
