@@ -1,79 +1,383 @@
 // Registry client - HTTP client for package registry
+// Uses oite's built-in fetch() function
+
+import { getRegistryConfig, RegistryConfig } from "./config.ot";
+
+// ============================================================================
+// Types
+// ============================================================================
 
 interface PackageVersion {
     version: string;
     checksum: string;
+    download_url: string;
     dependencies: VersionDependency[];
+    features: object;
     yanked: boolean;
+    created_at: string;
 }
 
 interface VersionDependency {
     name: string;
-    version: string;
+    req: string;
+    features: string[];
+    optional: boolean;
+    default_features: boolean;
 }
 
-interface FetchVersionsResult {
-    versions: PackageVersion[];
+interface PackageInfo {
+    id: string;
+    name: string;
+    description: string;
+    repository: string;
+    documentation: string;
+    homepage: string;
+    versions: string[];
+    owners: PackageOwner[];
+    max_version: string;
+    created_at: string;
+    updated_at: string;
+}
+
+interface PackageOwner {
+    id: string;
+    username: string;
+    avatar_url: string;
+}
+
+interface SearchResult {
+    name: string;
+    description: string;
+    max_version: string;
+    downloads: number;
+}
+
+interface SearchResponse {
+    rolls: SearchResult[];
+    meta: SearchMeta;
+}
+
+interface SearchMeta {
+    total: number;
+    page: number;
+    per_page: number;
+}
+
+interface UserInfo {
+    id: string;
+    username: string;
+    email: string;
+    avatar_url: string;
+}
+
+// ============================================================================
+// HTTP Helpers
+// ============================================================================
+
+interface HttpResponse {
+    status: number;
+    statusText: string;
+    ok: boolean;
+    body: string;
+    headers: object;
     error: string;
 }
 
-function fetchPackageVersions(name: string): FetchVersionsResult {
-    let url = getRegistryUrl() + "/api/v1/packages/" + encodePackageName(name) + "/versions";
+function httpGet(url: string, token?: string): HttpResponse {
+    let options: any = {
+        method: "GET",
+        headers: {}
+    };
 
-    let response = httpGet(url);
-    if (response.error != "") {
-        return { versions: [], error: response.error };
+    if (token && token != "") {
+        options.headers["Authorization"] = "Bearer " + token;
     }
 
-    // Parse JSON response
-    let versions = parseVersionsResponse(response.body);
-
-    return { versions: versions, error: "" };
+    let response = fetch(url, options);
+    return response;
 }
 
-interface DownloadResult {
-    data: string;
-    error: string;
-}
+function httpPost(url: string, body: string, token?: string): HttpResponse {
+    let options: any = {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: body
+    };
 
-function downloadPackage(name: string, version: string): DownloadResult {
-    let url = getRegistryUrl() + "/api/v1/packages/" + encodePackageName(name) + "/" + version + "/download";
-
-    let response = httpGet(url);
-    if (response.error != "") {
-        return { data: "", error: response.error };
+    if (token && token != "") {
+        options.headers["Authorization"] = "Bearer " + token;
     }
 
-    return { data: response.body, error: "" };
+    let response = fetch(url, options);
+    return response;
 }
 
-interface PublishResult {
-    success: boolean;
-    error: string;
-}
+function httpPut(url: string, body: string, token?: string, contentType?: string): HttpResponse {
+    let options: any = {
+        method: "PUT",
+        headers: {
+            "Content-Type": contentType || "application/json"
+        },
+        body: body
+    };
 
-function publishPackage(name: string, version: string, tarball: string, token: string): PublishResult {
-    let url = getRegistryUrl() + "/api/v1/packages/" + encodePackageName(name) + "/" + version;
-
-    let response = httpPut(url, tarball, {
-        "Authorization": "Bearer " + token,
-        "Content-Type": "application/gzip"
-    });
-
-    if (response.statusCode != 200 && response.statusCode != 201) {
-        return { success: false, error: "HTTP " + response.statusCode + ": " + response.body };
+    if (token && token != "") {
+        options.headers["Authorization"] = "Bearer " + token;
     }
 
-    return { success: true, error: "" };
+    let response = fetch(url, options);
+    return response;
 }
 
-function getRegistryUrl(): string {
-    // TODO: Read from config
-    return "https://registry.oite.org";
+// ============================================================================
+// JSON Parsing (simple implementation until @rolls/json is available)
+// ============================================================================
+
+function parseJson(text: string): any {
+    // Use a simple recursive descent parser
+    let parser = new JsonParser(text);
+    return parser.parse();
 }
+
+class JsonParser {
+    text: string;
+    pos: number;
+    len: number;
+
+    constructor(text: string) {
+        this.text = text;
+        this.pos = 0;
+        this.len = text.length;
+    }
+
+    parse(): any {
+        this.skipWhitespace();
+        return this.parseValue();
+    }
+
+    parseValue(): any {
+        this.skipWhitespace();
+        if (this.pos >= this.len) return null;
+
+        let ch = this.text[this.pos];
+
+        if (ch == '"') return this.parseString();
+        if (ch == '{') return this.parseObject();
+        if (ch == '[') return this.parseArray();
+        if (ch == 't') return this.parseTrue();
+        if (ch == 'f') return this.parseFalse();
+        if (ch == 'n') return this.parseNull();
+        if (ch == '-' || (ch >= '0' && ch <= '9')) return this.parseNumber();
+
+        return null;
+    }
+
+    parseString(): string {
+        this.pos++; // Skip opening quote
+        let result = "";
+
+        while (this.pos < this.len) {
+            let ch = this.text[this.pos];
+
+            if (ch == '"') {
+                this.pos++;
+                return result;
+            }
+
+            if (ch == '\\' && this.pos + 1 < this.len) {
+                this.pos++;
+                let escaped = this.text[this.pos];
+                if (escaped == '"') result = result + '"';
+                else if (escaped == '\\') result = result + '\\';
+                else if (escaped == 'n') result = result + '\n';
+                else if (escaped == 'r') result = result + '\r';
+                else if (escaped == 't') result = result + '\t';
+                else result = result + escaped;
+            } else {
+                result = result + ch;
+            }
+            this.pos++;
+        }
+
+        return result;
+    }
+
+    parseNumber(): number {
+        let start = this.pos;
+
+        if (this.text[this.pos] == '-') this.pos++;
+
+        while (this.pos < this.len && this.text[this.pos] >= '0' && this.text[this.pos] <= '9') {
+            this.pos++;
+        }
+
+        if (this.pos < this.len && this.text[this.pos] == '.') {
+            this.pos++;
+            while (this.pos < this.len && this.text[this.pos] >= '0' && this.text[this.pos] <= '9') {
+                this.pos++;
+            }
+        }
+
+        if (this.pos < this.len && (this.text[this.pos] == 'e' || this.text[this.pos] == 'E')) {
+            this.pos++;
+            if (this.pos < this.len && (this.text[this.pos] == '+' || this.text[this.pos] == '-')) {
+                this.pos++;
+            }
+            while (this.pos < this.len && this.text[this.pos] >= '0' && this.text[this.pos] <= '9') {
+                this.pos++;
+            }
+        }
+
+        let numStr = this.text.substring(start, this.pos);
+        return parseFloat(numStr);
+    }
+
+    parseObject(): object {
+        this.pos++; // Skip {
+        this.skipWhitespace();
+
+        let obj: any = {};
+
+        if (this.pos < this.len && this.text[this.pos] == '}') {
+            this.pos++;
+            return obj;
+        }
+
+        while (this.pos < this.len) {
+            this.skipWhitespace();
+
+            if (this.text[this.pos] != '"') break;
+            let key = this.parseString();
+
+            this.skipWhitespace();
+            if (this.text[this.pos] != ':') break;
+            this.pos++;
+
+            let value = this.parseValue();
+            obj[key] = value;
+
+            this.skipWhitespace();
+
+            if (this.text[this.pos] == '}') {
+                this.pos++;
+                return obj;
+            }
+
+            if (this.text[this.pos] == ',') {
+                this.pos++;
+            }
+        }
+
+        return obj;
+    }
+
+    parseArray(): any[] {
+        this.pos++; // Skip [
+        this.skipWhitespace();
+
+        let arr: any[] = [];
+
+        if (this.pos < this.len && this.text[this.pos] == ']') {
+            this.pos++;
+            return arr;
+        }
+
+        while (this.pos < this.len) {
+            let value = this.parseValue();
+            arr.push(value);
+
+            this.skipWhitespace();
+
+            if (this.text[this.pos] == ']') {
+                this.pos++;
+                return arr;
+            }
+
+            if (this.text[this.pos] == ',') {
+                this.pos++;
+                this.skipWhitespace();
+            }
+        }
+
+        return arr;
+    }
+
+    parseTrue(): boolean {
+        if (this.text.substring(this.pos, this.pos + 4) == "true") {
+            this.pos += 4;
+            return true;
+        }
+        return false;
+    }
+
+    parseFalse(): boolean {
+        if (this.text.substring(this.pos, this.pos + 5) == "false") {
+            this.pos += 5;
+            return false;
+        }
+        return true; // fallback
+    }
+
+    parseNull(): null {
+        if (this.text.substring(this.pos, this.pos + 4) == "null") {
+            this.pos += 4;
+        }
+        return null;
+    }
+
+    skipWhitespace(): void {
+        while (this.pos < this.len) {
+            let ch = this.text[this.pos];
+            if (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r') {
+                this.pos++;
+            } else {
+                break;
+            }
+        }
+    }
+}
+
+function parseFloat(s: string): number {
+    let result = 0;
+    let decimal = false;
+    let decimalPlace = 0.1;
+    let negative = false;
+    let i = 0;
+
+    if (s.length > 0 && s[0] == '-') {
+        negative = true;
+        i = 1;
+    }
+
+    while (i < s.length) {
+        let ch = s[i];
+        if (ch == '.') {
+            decimal = true;
+        } else if (ch >= '0' && ch <= '9') {
+            let digit = ch.charCodeAt(0) - '0'.charCodeAt(0);
+            if (decimal) {
+                result = result + digit * decimalPlace;
+                decimalPlace = decimalPlace * 0.1;
+            } else {
+                result = result * 10 + digit;
+            }
+        }
+        i = i + 1;
+    }
+
+    if (negative) {
+        result = 0 - result;
+    }
+    return result;
+}
+
+// ============================================================================
+// URL Encoding
+// ============================================================================
 
 function encodePackageName(name: string): string {
-    // Encode @ as %40 for scoped packages
     let encoded = "";
     let i = 0;
     while (i < name.length) {
@@ -90,44 +394,183 @@ function encodePackageName(name: string): string {
     return encoded;
 }
 
-function parseVersionsResponse(body: string): PackageVersion[] {
-    // TODO: Implement JSON parsing
-    return [];
+function encodeURIComponent(str: string): string {
+    let result = "";
+    let i = 0;
+    while (i < str.length) {
+        let c = str[i];
+        let code = c.charCodeAt(0);
+
+        // Safe characters: A-Z a-z 0-9 - _ . ~
+        if ((code >= 65 && code <= 90) ||   // A-Z
+            (code >= 97 && code <= 122) ||  // a-z
+            (code >= 48 && code <= 57) ||   // 0-9
+            c == '-' || c == '_' || c == '.' || c == '~') {
+            result = result + c;
+        } else {
+            // Encode as %XX
+            let hex = code.toString(16).toUpperCase();
+            if (hex.length == 1) {
+                hex = "0" + hex;
+            }
+            result = result + "%" + hex;
+        }
+        i = i + 1;
+    }
+    return result;
 }
 
-interface HttpResponse {
-    statusCode: number;
-    body: string;
+// ============================================================================
+// API Functions
+// ============================================================================
+
+interface ApiResult<T> {
+    data: T | null;
     error: string;
 }
 
-interface Headers {
-    [key: string]: string;
+/**
+ * Search for packages in the registry
+ */
+function searchPackages(query: string, limit: number = 20, page: number = 1): ApiResult<SearchResponse> {
+    let config = getRegistryConfig();
+    let url = config.url + "/crates?q=" + encodeURIComponent(query) + "&per_page=" + limit + "&page=" + page;
+
+    let response = httpGet(url);
+
+    if (response.error && response.error != "") {
+        return { data: null, error: response.error };
+    }
+
+    if (!response.ok) {
+        return { data: null, error: "HTTP " + response.status + ": " + response.body };
+    }
+
+    let data = parseJson(response.body) as SearchResponse;
+    return { data: data, error: "" };
 }
 
-function httpGet(url: string): HttpResponse {
-    // TODO: Implement HTTP GET
-    return {
-        statusCode: 0,
-        body: "",
-        error: "HTTP client not implemented"
-    };
+/**
+ * Get package information
+ */
+function getPackageInfo(name: string): ApiResult<PackageInfo> {
+    let config = getRegistryConfig();
+    let url = config.url + "/crates/" + encodePackageName(name);
+
+    let response = httpGet(url);
+
+    if (response.error && response.error != "") {
+        return { data: null, error: response.error };
+    }
+
+    if (!response.ok) {
+        let errorData = parseJson(response.body);
+        if (errorData && errorData.errors && errorData.errors.length > 0) {
+            return { data: null, error: errorData.errors[0].detail };
+        }
+        return { data: null, error: "HTTP " + response.status };
+    }
+
+    let data = parseJson(response.body) as PackageInfo;
+    return { data: data, error: "" };
 }
 
-function httpPut(url: string, body: string, headers: Headers): HttpResponse {
-    // TODO: Implement HTTP PUT
-    return {
-        statusCode: 0,
-        body: "",
-        error: "HTTP client not implemented"
-    };
+/**
+ * Get specific version information
+ */
+function getPackageVersion(name: string, version: string): ApiResult<PackageVersion> {
+    let config = getRegistryConfig();
+    let url = config.url + "/crates/" + encodePackageName(name) + "/" + version;
+
+    let response = httpGet(url);
+
+    if (response.error && response.error != "") {
+        return { data: null, error: response.error };
+    }
+
+    if (!response.ok) {
+        let errorData = parseJson(response.body);
+        if (errorData && errorData.errors && errorData.errors.length > 0) {
+            return { data: null, error: errorData.errors[0].detail };
+        }
+        return { data: null, error: "HTTP " + response.status };
+    }
+
+    let data = parseJson(response.body) as PackageVersion;
+    return { data: data, error: "" };
 }
+
+/**
+ * Validate token and get user info
+ */
+function validateToken(token: string): ApiResult<UserInfo> {
+    let config = getRegistryConfig();
+    let url = config.url + "/me";
+
+    let response = httpGet(url, token);
+
+    if (response.error && response.error != "") {
+        return { data: null, error: response.error };
+    }
+
+    if (!response.ok) {
+        let errorData = parseJson(response.body);
+        if (errorData && errorData.errors && errorData.errors.length > 0) {
+            return { data: null, error: errorData.errors[0].detail };
+        }
+        return { data: null, error: "Invalid token" };
+    }
+
+    let data = parseJson(response.body) as UserInfo;
+    return { data: data, error: "" };
+}
+
+/**
+ * Publish a package
+ */
+function publishPackage(tarball: string, token: string): ApiResult<boolean> {
+    let config = getRegistryConfig();
+    let url = config.url + "/crates/new";
+
+    let response = httpPut(url, tarball, token, "application/gzip");
+
+    if (response.error && response.error != "") {
+        return { data: false, error: response.error };
+    }
+
+    if (!response.ok) {
+        let errorData = parseJson(response.body);
+        if (errorData && errorData.errors && errorData.errors.length > 0) {
+            return { data: false, error: errorData.errors[0].detail };
+        }
+        return { data: false, error: "HTTP " + response.status + ": " + response.body };
+    }
+
+    return { data: true, error: "" };
+}
+
+// ============================================================================
+// Exports
+// ============================================================================
 
 export {
+    // Types
     PackageVersion,
     VersionDependency,
-    FetchVersionsResult,
-    fetchPackageVersions,
-    downloadPackage,
-    publishPackage
+    PackageInfo,
+    PackageOwner,
+    SearchResult,
+    SearchResponse,
+    SearchMeta,
+    UserInfo,
+    ApiResult,
+
+    // Functions
+    searchPackages,
+    getPackageInfo,
+    getPackageVersion,
+    validateToken,
+    publishPackage,
+    encodePackageName,
+    parseJson
 };

@@ -1,9 +1,20 @@
 // Registry commands: search, info, publish, login
 
 import { loadManifest } from "../config/manifest.ot";
-import { getRegistryConfig, RegistryConfig } from "../registry/config.ot";
-
-const DEFAULT_REGISTRY = "https://registry.oite.org";
+import { getRegistryConfig, RegistryConfig, saveCredentials } from "../registry/config.ot";
+import {
+    searchPackages,
+    getPackageInfo,
+    getPackageVersion,
+    validateToken,
+    publishPackage,
+    SearchResponse,
+    SearchResult,
+    PackageInfo,
+    PackageVersion,
+    UserInfo,
+    ApiResult
+} from "../registry/client.ot";
 
 // ============================================================================
 // unroll search
@@ -12,22 +23,29 @@ const DEFAULT_REGISTRY = "https://registry.oite.org";
 interface SearchOptions {
     query: string;
     limit: number;
+    page: number;
 }
 
 function parseSearchArgs(args: string[]): SearchOptions {
     let options: SearchOptions = {
         query: "",
-        limit: 20
+        limit: 20,
+        page: 1
     };
 
     let i = 0;
     while (i < args.length) {
         let arg = args[i];
 
-        if (arg == "--limit") {
+        if (arg == "--limit" || arg == "-l") {
             i = i + 1;
             if (i < args.length) {
                 options.limit = parseInt(args[i]);
+            }
+        } else if (arg == "--page" || arg == "-p") {
+            i = i + 1;
+            if (i < args.length) {
+                options.page = parseInt(args[i]);
             }
         } else if (arg[0] != "-") {
             options.query = arg;
@@ -44,57 +62,54 @@ function runSearch(args: string[]): number {
 
     if (options.query == "") {
         console.error("Error: search query required");
-        console.error("Usage: unroll search <query>");
+        console.error("Usage: unroll search <query> [--limit N] [--page N]");
         return 1;
     }
 
-    let config = getRegistryConfig();
     console.log("Searching for '" + options.query + "'...");
     console.log("");
 
-    let results = searchPackages(config.url, options.query, options.limit);
+    let result = searchPackages(options.query, options.limit, options.page);
 
-    if (results.error != "") {
-        console.error("Error: " + results.error);
+    if (result.error != "") {
+        console.error("Error: " + result.error);
         return 1;
     }
 
-    if (results.packages.length == 0) {
+    if (result.data == null) {
         console.log("No packages found");
         return 0;
     }
 
+    let data = result.data as SearchResponse;
+
+    if (data.rolls == null || data.rolls.length == 0) {
+        console.log("No packages found matching '" + options.query + "'");
+        return 0;
+    }
+
+    // Display results
     let i = 0;
-    while (i < results.packages.length) {
-        let pkg = results.packages[i];
-        console.log(pkg.name + " (" + pkg.version + ")");
-        if (pkg.description != "") {
-            console.log("  " + pkg.description);
+    while (i < data.rolls.length) {
+        let pkg = data.rolls[i];
+        console.log(pkg.name + " (" + pkg.max_version + ")");
+        if (pkg.description != null && pkg.description != "") {
+            console.log("    " + pkg.description);
+        }
+        if (pkg.downloads != null && pkg.downloads > 0) {
+            console.log("    Downloads: " + pkg.downloads);
         }
         i = i + 1;
     }
 
+    // Display pagination info
+    if (data.meta != null) {
+        console.log("");
+        console.log("Page " + data.meta.page + " of " + Math.ceil(data.meta.total / data.meta.per_page));
+        console.log("Total: " + data.meta.total + " packages");
+    }
+
     return 0;
-}
-
-interface PackageInfo {
-    name: string;
-    version: string;
-    description: string;
-    downloads: number;
-}
-
-interface SearchResult {
-    packages: PackageInfo[];
-    error: string;
-}
-
-function searchPackages(registry: string, query: string, limit: number): SearchResult {
-    // TODO: Implement HTTP request to registry
-    return {
-        packages: [],
-        error: ""
-    };
 }
 
 // ============================================================================
@@ -103,12 +118,14 @@ function searchPackages(registry: string, query: string, limit: number): SearchR
 
 interface InfoOptions {
     package: string;
+    version: string;
     versions: boolean;
 }
 
 function parseInfoArgs(args: string[]): InfoOptions {
     let options: InfoOptions = {
         package: "",
+        version: "",
         versions: false
     };
 
@@ -116,10 +133,22 @@ function parseInfoArgs(args: string[]): InfoOptions {
     while (i < args.length) {
         let arg = args[i];
 
-        if (arg == "--versions") {
+        if (arg == "--versions" || arg == "-v") {
             options.versions = true;
+        } else if (arg == "--version") {
+            i = i + 1;
+            if (i < args.length) {
+                options.version = args[i];
+            }
         } else if (arg[0] != "-") {
-            options.package = arg;
+            // Check if package@version format
+            let atIndex = arg.indexOf("@");
+            if (atIndex > 0) {
+                options.package = arg.substring(0, atIndex);
+                options.version = arg.substring(atIndex + 1);
+            } else {
+                options.package = arg;
+            }
         }
 
         i = i + 1;
@@ -133,81 +162,111 @@ function runInfo(args: string[]): number {
 
     if (options.package == "") {
         console.error("Error: package name required");
-        console.error("Usage: unroll info <package> [--versions]");
+        console.error("Usage: unroll info <package>[@version] [--versions]");
         return 1;
     }
 
-    let config = getRegistryConfig();
-    let info = getPackageInfo(config.url, options.package);
-
-    if (info.error != "") {
-        console.error("Error: " + info.error);
-        return 1;
-    }
-
-    console.log(info.name + "@" + info.latestVersion);
+    console.log("Fetching package info for '" + options.package + "'...");
     console.log("");
 
-    if (info.description != "") {
+    let result = getPackageInfo(options.package);
+
+    if (result.error != "") {
+        console.error("Error: " + result.error);
+        return 1;
+    }
+
+    if (result.data == null) {
+        console.error("Error: Package not found");
+        return 1;
+    }
+
+    let info = result.data as PackageInfo;
+
+    // Header
+    console.log(info.name + "@" + info.max_version);
+    console.log("");
+
+    // Description
+    if (info.description != null && info.description != "") {
         console.log(info.description);
         console.log("");
     }
 
-    console.log("License: " + info.license);
-    console.log("Homepage: " + info.homepage);
-    console.log("Repository: " + info.repository);
-    console.log("Downloads: " + info.downloads);
+    // Links
+    if (info.homepage != null && info.homepage != "") {
+        console.log("Homepage:      " + info.homepage);
+    }
+    if (info.repository != null && info.repository != "") {
+        console.log("Repository:    " + info.repository);
+    }
+    if (info.documentation != null && info.documentation != "") {
+        console.log("Documentation: " + info.documentation);
+    }
     console.log("");
 
-    if (info.dependencies.length > 0) {
-        console.log("Dependencies:");
-        let i = 0;
-        while (i < info.dependencies.length) {
-            console.log("  " + info.dependencies[i]);
-            i = i + 1;
-        }
-        console.log("");
+    // Dates
+    if (info.created_at != null && info.created_at != "") {
+        console.log("Created:  " + info.created_at);
+    }
+    if (info.updated_at != null && info.updated_at != "") {
+        console.log("Updated:  " + info.updated_at);
     }
 
-    if (options.versions) {
-        console.log("Versions:");
+    // Owners
+    if (info.owners != null && info.owners.length > 0) {
+        console.log("");
+        console.log("Owners:");
+        let i = 0;
+        while (i < info.owners.length) {
+            console.log("  - " + info.owners[i].username);
+            i = i + 1;
+        }
+    }
+
+    // Versions
+    if (options.versions && info.versions != null && info.versions.length > 0) {
+        console.log("");
+        console.log("Versions (" + info.versions.length + "):");
         let i = 0;
         while (i < info.versions.length) {
-            console.log("  " + info.versions[i]);
+            console.log("  - " + info.versions[i]);
             i = i + 1;
+        }
+    }
+
+    // If specific version requested, show its details
+    if (options.version != "") {
+        console.log("");
+        console.log("Version " + options.version + " details:");
+
+        let versionResult = getPackageVersion(options.package, options.version);
+        if (versionResult.error != "") {
+            console.error("  Error: " + versionResult.error);
+        } else if (versionResult.data != null) {
+            let ver = versionResult.data as PackageVersion;
+            console.log("  Checksum: " + ver.checksum);
+            console.log("  Download: " + ver.download_url);
+            if (ver.yanked) {
+                console.log("  Status:   YANKED");
+            }
+            if (ver.dependencies != null && ver.dependencies.length > 0) {
+                console.log("  Dependencies:");
+                let j = 0;
+                while (j < ver.dependencies.length) {
+                    let dep = ver.dependencies[j];
+                    let depStr = "    - " + dep.name + " " + dep.req;
+                    if (dep.optional) {
+                        depStr = depStr + " (optional)";
+                    }
+                    console.log(depStr);
+                    j = j + 1;
+                }
+            }
         }
     }
 
     return 0;
-}
-
-interface DetailedPackageInfo {
-    name: string;
-    latestVersion: string;
-    description: string;
-    license: string;
-    homepage: string;
-    repository: string;
-    downloads: number;
-    dependencies: string[];
-    versions: string[];
-    error: string;
-}
-
-function getPackageInfo(registry: string, name: string): DetailedPackageInfo {
-    // TODO: Implement HTTP request to registry
-    return {
-        name: name,
-        latestVersion: "0.0.0",
-        description: "",
-        license: "Unknown",
-        homepage: "",
-        repository: "",
-        downloads: 0,
-        dependencies: [],
-        versions: [],
-        error: "Package not found"
-    };
 }
 
 // ============================================================================
@@ -241,8 +300,8 @@ function runPublish(args: string[]): number {
     }
 
     // Upload to registry
-    let result = uploadPackage(config.url, config.token, tarball.data);
-    if (!result.success) {
+    let result = publishPackage(tarball.data, config.token);
+    if (result.error != "") {
         console.error("Error publishing: " + result.error);
         return 1;
     }
@@ -258,17 +317,11 @@ interface TarballResult {
 
 function createTarball(dir: string): TarballResult {
     // TODO: Implement tarball creation
-    return { data: "", error: "" };
-}
-
-interface UploadResult {
-    success: boolean;
-    error: string;
-}
-
-function uploadPackage(registry: string, token: string, data: string): UploadResult {
-    // TODO: Implement HTTP upload
-    return { success: true, error: "" };
+    // This will need to:
+    // 1. Read unroll.toml
+    // 2. Collect all source files
+    // 3. Create .crate tarball format
+    return { data: "", error: "Tarball creation not yet implemented" };
 }
 
 // ============================================================================
@@ -278,61 +331,91 @@ function uploadPackage(registry: string, token: string, data: string): UploadRes
 function runLogin(args: string[]): number {
     let config = getRegistryConfig();
 
+    // Check if already logged in
+    if (config.token != "") {
+        let checkResult = validateToken(config.token);
+        if (checkResult.error == "" && checkResult.data != null) {
+            let user = checkResult.data as UserInfo;
+            console.log("Already logged in as " + user.username);
+            console.log("Run 'unroll logout' first to log in as a different user");
+            return 0;
+        }
+    }
+
     console.log("Logging in to " + config.url + "...");
     console.log("");
     console.log("Visit this URL to authenticate:");
-    console.log(config.url + "/cli/login");
+    console.log(config.url.replace("/api/v1", "") + "/cli/login");
     console.log("");
     console.log("Then paste your token below:");
 
     // Read token from stdin
     let token = readLine();
 
-    if (token == "") {
+    if (token == "" || token == null) {
         console.error("Error: no token provided");
         return 1;
     }
 
+    // Trim whitespace
+    token = token.trim();
+
     // Validate token
-    let valid = validateToken(config.url, token);
-    if (!valid.success) {
+    let validResult = validateToken(token);
+    if (validResult.error != "") {
+        console.error("Error: " + validResult.error);
+        return 1;
+    }
+
+    if (validResult.data == null) {
         console.error("Error: invalid token");
         return 1;
     }
 
+    let user = validResult.data as UserInfo;
+
     // Save token
-    let result = saveToken(token);
-    if (!result.success) {
-        console.error("Error saving token: " + result.error);
+    let saved = saveCredentials(config.url, token);
+    if (!saved) {
+        console.error("Error: could not save credentials");
         return 1;
     }
 
-    console.log("Logged in as " + valid.username);
+    console.log("");
+    console.log("Logged in as " + user.username);
     return 0;
 }
 
-interface ValidateResult {
-    success: boolean;
-    username: string;
+// ============================================================================
+// unroll logout
+// ============================================================================
+
+function runLogout(args: string[]): number {
+    let config = getRegistryConfig();
+
+    if (config.token == "") {
+        console.log("Not logged in");
+        return 0;
+    }
+
+    // Clear credentials
+    let saved = saveCredentials(config.url, "");
+    if (!saved) {
+        console.error("Error: could not clear credentials");
+        return 1;
+    }
+
+    console.log("Logged out");
+    return 0;
 }
 
-function validateToken(registry: string, token: string): ValidateResult {
-    // TODO: Implement token validation
-    return { success: false, username: "" };
-}
-
-interface SaveResult {
-    success: boolean;
-    error: string;
-}
-
-function saveToken(token: string): SaveResult {
-    // TODO: Save to ~/.unroll/credentials
-    return { success: true, error: "" };
-}
+// ============================================================================
+// Helpers
+// ============================================================================
 
 function readLine(): string {
-    // TODO: Implement stdin reading
+    // Use oite's built-in stdin reading
+    // TODO: This needs to be implemented in oite's stdlib
     return "";
 }
 
@@ -349,4 +432,4 @@ function parseInt(s: string): number {
     return result;
 }
 
-export { runSearch, runInfo, runPublish, runLogin };
+export { runSearch, runInfo, runPublish, runLogin, runLogout };

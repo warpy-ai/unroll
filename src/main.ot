@@ -11,7 +11,7 @@ import { runFmt } from "./cli/fmt.ot";
 import { runLint } from "./cli/lint.ot";
 import { runCheck } from "./cli/check.ot";
 import { runDoc } from "./cli/doc.ot";
-import { runSearch, runInfo, runPublish, runLogin } from "./cli/registry.ot";
+import { runSearch, runInfo, runPublish, runLogin, runLogout } from "./cli/registry.ot";
 
 const VERSION = "0.1.0";
 
@@ -95,6 +95,9 @@ function main(args: string[]): number {
     }
     if (command == "login") {
         return runLogin(cmdArgs);
+    }
+    if (command == "logout") {
+        return runLogout(cmdArgs);
     }
 
     // Unknown command
