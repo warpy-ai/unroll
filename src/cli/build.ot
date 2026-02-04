@@ -178,8 +178,17 @@ function runRun(args: string[]): number {
 }
 
 function executeProcess(path: string, args: string[]): number {
-    // TODO: Implement process execution
-    return 0;
+    let result = process.exec(path, args);
+
+    // Print output
+    if (result.stdout != "") {
+        console.log(result.stdout);
+    }
+    if (result.stderr != "") {
+        console.error(result.stderr);
+    }
+
+    return result.exitCode;
 }
 
 // ============================================================================
@@ -276,7 +285,17 @@ interface Result {
 }
 
 function removeDirectory(path: string): Result {
-    // TODO: Implement directory removal
+    // Check if directory exists first
+    if (!fs.existsSync(path)) {
+        return { success: true, error: "" };
+    }
+
+    // Use rm -rf for recursive removal
+    let result = process.exec("rm", ["-rf", path]);
+    if (result.exitCode != 0) {
+        return { success: false, error: result.stderr };
+    }
+
     return { success: true, error: "" };
 }
 

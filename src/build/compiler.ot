@@ -123,8 +123,34 @@ function getCompilerFlags(profile: string, target: string): CompilerFlags {
 }
 
 function discoverSources(dir: string): string[] {
-    // TODO: Implement recursive file discovery
-    return [];
+    let sources: string[] = [];
+    discoverSourcesRecursive(dir, sources);
+    return sources;
+}
+
+function discoverSourcesRecursive(dir: string, sources: string[]): void {
+    if (!fs.existsSync(dir)) {
+        return;
+    }
+
+    let entries = fs.readdirSync(dir);
+    let i = 0;
+    while (i < entries.length) {
+        let entry = entries[i];
+        let fullPath = dir + "/" + entry;
+
+        // Check if it's a directory
+        let stats = fs.statSync(fullPath);
+        if (stats && stats.isDirectory && stats.isDirectory()) {
+            // Recurse into subdirectory
+            discoverSourcesRecursive(fullPath, sources);
+        } else if (entry.indexOf(".ot") == entry.length - 3) {
+            // It's an .ot file
+            sources.push(fullPath);
+        }
+
+        i = i + 1;
+    }
 }
 
 function getObjectPath(source: string, outputDir: string): string {
@@ -134,14 +160,16 @@ function getObjectPath(source: string, outputDir: string): string {
     // Remove ./src/ prefix
     if (name.indexOf("./src/") == 0) {
         name = name.substring(6);
+    } else if (name.indexOf("src/") == 0) {
+        name = name.substring(4);
     }
 
     // Replace / with _
     name = name.split("/").join("_");
 
-    // Replace .ot with .o
-    if (name.indexOf(".ot") == name.length - 5) {
-        name = name.substring(0, name.length - 5) + ".o";
+    // Replace .ot with .o (length of ".ot" is 3)
+    if (name.length > 3 && name.substring(name.length - 3) == ".ot") {
+        name = name.substring(0, name.length - 3) + ".o";
     }
 
     return outputDir + "/" + name;
@@ -207,12 +235,59 @@ interface ExecuteResult {
 }
 
 function executeCompiler(args: string[]): ExecuteResult {
-    // TODO: Implement process execution
+    // Find oitec binary - try multiple locations
+    let oitec = findOitec();
+    if (oitec == "") {
+        return {
+            exitCode: 1,
+            stdout: "",
+            stderr: "Could not find oitec compiler. Make sure it's in PATH or OITEC_PATH is set."
+        };
+    }
+
+    // Execute oitec with the provided arguments
+    let result = process.exec(oitec, args);
     return {
-        exitCode: 0,
-        stdout: "",
-        stderr: ""
+        exitCode: result.exitCode,
+        stdout: result.stdout,
+        stderr: result.stderr
     };
+}
+
+function findOitec(): string {
+    // Try environment variable first
+    let oitecPath = process.env.get("OITEC_PATH");
+    if (oitecPath != "" && oitecPath != null) {
+        return oitecPath;
+    }
+
+    // Try common locations
+    let locations = [
+        "oitec",                              // In PATH
+        "./oitec",                            // Current directory
+        "../oite/target/debug/oite",          // Development (debug)
+        "../oite/target/release/oite",        // Development (release)
+        "/usr/local/bin/oitec",               // System install
+        process.env.get("HOME") + "/.oite/bin/oitec"  // User install
+    ];
+
+    let i = 0;
+    while (i < locations.length) {
+        let loc = locations[i];
+        // Try to execute with --help or check existence
+        let result = process.exec("which", [loc]);
+        if (result.exitCode == 0) {
+            return result.stdout.trim();
+        }
+        // Also try direct execution test
+        let testResult = process.exec(loc, ["--version"]);
+        if (testResult.exitCode == 0 || testResult.stdout != "" || testResult.stderr.indexOf("not found") == -1) {
+            return loc;
+        }
+        i = i + 1;
+    }
+
+    return "";
 }
 
 function parseWarnings(output: string): CompileWarning[] {
@@ -221,7 +296,9 @@ function parseWarnings(output: string): CompileWarning[] {
 }
 
 function createDirectory(path: string): void {
-    // TODO: Implement
+    if (!fs.existsSync(path)) {
+        fs.mkdirSync(path, { recursive: true });
+    }
 }
 
 export { compileSources, CompileOptions, CompileResult };
