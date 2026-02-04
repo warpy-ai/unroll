@@ -1,11 +1,4 @@
-// Registry client - HTTP client for package registry
-// Uses oite's built-in fetch() function
-
 import { getRegistryConfig, RegistryConfig } from "./config.ot";
-
-// ============================================================================
-// Types
-// ============================================================================
 
 interface PackageVersion {
     version: string;
@@ -70,10 +63,6 @@ interface UserInfo {
     avatar_url: string;
 }
 
-// ============================================================================
-// HTTP Helpers
-// ============================================================================
-
 interface HttpResponse {
     status: number;
     statusText: string;
@@ -130,10 +119,6 @@ function httpPut(url: string, body: string, token?: string, contentType?: string
     let response = fetch(url, options);
     return response;
 }
-
-// ============================================================================
-// JSON Parsing (simple implementation until @rolls/json is available)
-// ============================================================================
 
 function parseJson(text: string): any {
     // Use a simple recursive descent parser
@@ -373,10 +358,6 @@ function parseFloat(s: string): number {
     return result;
 }
 
-// ============================================================================
-// URL Encoding
-// ============================================================================
-
 function encodePackageName(name: string): string {
     let encoded = "";
     let i = 0;
@@ -419,10 +400,6 @@ function encodeURIComponent(str: string): string {
     }
     return result;
 }
-
-// ============================================================================
-// API Functions
-// ============================================================================
 
 interface ApiResult<T> {
     data: T | null;
@@ -648,9 +625,6 @@ function parseVersionPart(s: string): number {
     return result;
 }
 
-// ============================================================================
-// Exports
-// ============================================================================
 
 export {
     // Types

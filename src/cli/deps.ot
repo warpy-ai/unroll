@@ -1,12 +1,6 @@
-// Dependency management commands: add, remove, update
-
 import { loadManifest, saveManifest, Manifest, Dependency } from "../config/manifest.ot";
 import { resolveDependencies } from "../resolver/mod.ot";
 import { writeLockfile } from "../config/lockfile.ot";
-
-// ============================================================================
-// unroll add
-// ============================================================================
 
 interface AddOptions {
     packages: string[];
@@ -55,7 +49,6 @@ function runAdd(args: string[]): number {
         return 1;
     }
 
-    // Load current manifest
     let manifest = loadManifest("./unroll.toml");
     if (manifest == null) {
         console.error("Error: could not find unroll.toml");
@@ -63,7 +56,6 @@ function runAdd(args: string[]): number {
         return 1;
     }
 
-    // Add each package
     let i = 0;
     while (i < options.packages.length) {
         let pkg = options.packages[i];
@@ -71,7 +63,6 @@ function runAdd(args: string[]): number {
 
         console.log("Adding " + parsed.name + "@" + parsed.version + "...");
 
-        // Add to appropriate section
         if (options.dev) {
             addDevDependency(manifest, parsed.name, parsed.version, options);
         } else {
@@ -81,7 +72,6 @@ function runAdd(args: string[]): number {
         i = i + 1;
     }
 
-    // Resolve dependencies
     console.log("Resolving dependencies...");
     let resolved = resolveDependencies(manifest);
     if (resolved.error != "") {
@@ -89,7 +79,6 @@ function runAdd(args: string[]): number {
         return 1;
     }
 
-    // Save manifest and lockfile
     let result = saveManifest("./unroll.toml", manifest);
     if (!result.success) {
         console.error("Error saving manifest: " + result.error);
@@ -112,10 +101,8 @@ interface PackageSpec {
 }
 
 function parsePackageSpec(spec: string): PackageSpec {
-    // Handle @scope/name@version format
     let atIndex = spec.lastIndexOf("@");
 
-    // If @ is at position 0, it's a scoped package, look for second @
     if (atIndex == 0) {
         let secondAt = spec.indexOf("@", 1);
         if (secondAt > 0) {
@@ -138,11 +125,9 @@ function parsePackageSpec(spec: string): PackageSpec {
 }
 
 function addDependency(manifest: Manifest, name: string, version: string, options: AddOptions): void {
-    // Check if dependency already exists
     let i = 0;
     while (i < manifest.dependencies.length) {
         if (manifest.dependencies[i].name == name) {
-            // Update existing dependency
             manifest.dependencies[i].version = version;
             manifest.dependencies[i].optional = options.optional;
             manifest.dependencies[i].features = options.features;
@@ -151,7 +136,6 @@ function addDependency(manifest: Manifest, name: string, version: string, option
         i = i + 1;
     }
 
-    // Add new dependency
     manifest.dependencies.push({
         name: name,
         version: version,
@@ -164,11 +148,9 @@ function addDependency(manifest: Manifest, name: string, version: string, option
 }
 
 function addDevDependency(manifest: Manifest, name: string, version: string, options: AddOptions): void {
-    // Check if dependency already exists
     let i = 0;
     while (i < manifest.devDependencies.length) {
         if (manifest.devDependencies[i].name == name) {
-            // Update existing dependency
             manifest.devDependencies[i].version = version;
             manifest.devDependencies[i].optional = options.optional;
             manifest.devDependencies[i].features = options.features;
@@ -177,7 +159,6 @@ function addDevDependency(manifest: Manifest, name: string, version: string, opt
         i = i + 1;
     }
 
-    // Add new dependency
     manifest.devDependencies.push({
         name: name,
         version: version,
@@ -188,10 +169,6 @@ function addDevDependency(manifest: Manifest, name: string, version: string, opt
         path: ""
     });
 }
-
-// ============================================================================
-// unroll remove
-// ============================================================================
 
 interface RemoveOptions {
     packages: string[];
@@ -223,14 +200,12 @@ function runRemove(args: string[]): number {
         return 1;
     }
 
-    // Load manifest
     let manifest = loadManifest("./unroll.toml");
     if (manifest == null) {
         console.error("Error: could not find unroll.toml");
         return 1;
     }
 
-    // Remove each package
     let i = 0;
     while (i < options.packages.length) {
         let pkg = options.packages[i];
@@ -239,7 +214,6 @@ function runRemove(args: string[]): number {
         i = i + 1;
     }
 
-    // Re-resolve and save
     let resolved = resolveDependencies(manifest);
     saveManifest("./unroll.toml", manifest);
     writeLockfile("./unroll.lock", resolved.packages);
@@ -249,7 +223,6 @@ function runRemove(args: string[]): number {
 }
 
 function removeDependency(manifest: Manifest, name: string): void {
-    // Remove from dependencies
     let newDeps: any[] = [];
     let i = 0;
     while (i < manifest.dependencies.length) {
@@ -260,7 +233,6 @@ function removeDependency(manifest: Manifest, name: string): void {
     }
     manifest.dependencies = newDeps;
 
-    // Also remove from dev-dependencies
     let newDevDeps: any[] = [];
     i = 0;
     while (i < manifest.devDependencies.length) {
@@ -271,10 +243,6 @@ function removeDependency(manifest: Manifest, name: string): void {
     }
     manifest.devDependencies = newDevDeps;
 }
-
-// ============================================================================
-// unroll update
-// ============================================================================
 
 interface UpdateOptions {
     packages: string[];
@@ -298,7 +266,6 @@ function parseUpdateArgs(args: string[]): UpdateOptions {
         i = i + 1;
     }
 
-    // If no packages specified, update all
     if (options.packages.length == 0) {
         options.all = true;
     }
@@ -309,7 +276,6 @@ function parseUpdateArgs(args: string[]): UpdateOptions {
 function runUpdate(args: string[]): number {
     let options = parseUpdateArgs(args);
 
-    // Load manifest
     let manifest = loadManifest("./unroll.toml");
     if (manifest == null) {
         console.error("Error: could not find unroll.toml");
@@ -322,14 +288,12 @@ function runUpdate(args: string[]): number {
         console.log("Updating: " + options.packages.join(", "));
     }
 
-    // Resolve with updates
     let resolved = resolveDependencies(manifest);
     if (resolved.error != "") {
         console.error("Error resolving dependencies: " + resolved.error);
         return 1;
     }
 
-    // Write new lockfile
     let result = writeLockfile("./unroll.lock", resolved.packages);
     if (!result.success) {
         console.error("Error writing lockfile: " + result.error);

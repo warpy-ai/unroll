@@ -1,19 +1,17 @@
-// Compiler integration - interface with Oite compiler
-
 import { Manifest } from "../config/manifest.ot";
 import { Lockfile } from "../config/lockfile.ot";
 
 interface CompileOptions {
-    profile: string;       // "dev" | "release" | "dist"
-    target: string;        // "native" | "wasm32" | etc
-    jobs: number;          // Parallel compilation jobs
+    profile: string;
+    target: string;
+    jobs: number;
     verbose: boolean;
 }
 
 interface CompileResult {
     success: boolean;
     error: string;
-    objects: string[];     // Compiled object files
+    objects: string[];
     warnings: CompileWarning[];
 }
 
@@ -31,21 +29,17 @@ function compileSources(manifest: Manifest, lockfile: Lockfile | null, options: 
         warnings: []
     };
 
-    // Discover source files
     let sources = discoverSources("./src");
     if (sources.length == 0) {
         result.error = "No source files found";
         return result;
     }
 
-    // Create output directory
     let outputDir = "./target/" + options.profile;
     createDirectory(outputDir);
 
-    // Get compiler flags based on profile
     let flags = getCompilerFlags(options.profile, options.target);
 
-    // Compile each source file
     let i = 0;
     while (i < sources.length) {
         let source = sources[i];
@@ -64,7 +58,6 @@ function compileSources(manifest: Manifest, lockfile: Lockfile | null, options: 
 
         result.objects.push(outputPath);
 
-        // Collect warnings
         let j = 0;
         while (j < compileResult.warnings.length) {
             result.warnings.push(compileResult.warnings[j]);
@@ -74,7 +67,6 @@ function compileSources(manifest: Manifest, lockfile: Lockfile | null, options: 
         i = i + 1;
     }
 
-    // Compile dependencies if not using lockfile
     if (lockfile != null) {
         let depResult = compileDependencies(lockfile, outputDir, flags, options.verbose);
         if (!depResult.success) {
@@ -82,7 +74,6 @@ function compileSources(manifest: Manifest, lockfile: Lockfile | null, options: 
             return result;
         }
 
-        // Add dependency objects
         let k = 0;
         while (k < depResult.objects.length) {
             result.objects.push(depResult.objects[k]);
@@ -139,13 +130,10 @@ function discoverSourcesRecursive(dir: string, sources: string[]): void {
         let entry = entries[i];
         let fullPath = dir + "/" + entry;
 
-        // Check if it's a directory
         let stats = fs.statSync(fullPath);
         if (stats && stats.isDirectory && stats.isDirectory()) {
-            // Recurse into subdirectory
             discoverSourcesRecursive(fullPath, sources);
         } else if (entry.indexOf(".ot") == entry.length - 3) {
-            // It's an .ot file
             sources.push(fullPath);
         }
 
@@ -154,20 +142,16 @@ function discoverSourcesRecursive(dir: string, sources: string[]): void {
 }
 
 function getObjectPath(source: string, outputDir: string): string {
-    // Convert ./src/foo/bar.ot to ./target/profile/foo_bar.o
     let name = source;
 
-    // Remove ./src/ prefix
     if (name.indexOf("./src/") == 0) {
         name = name.substring(6);
     } else if (name.indexOf("src/") == 0) {
         name = name.substring(4);
     }
 
-    // Replace / with _
     name = name.split("/").join("_");
 
-    // Replace .ot with .o (length of ".ot" is 3)
     if (name.length > 3 && name.substring(name.length - 3) == ".ot") {
         name = name.substring(0, name.length - 3) + ".o";
     }
@@ -182,7 +166,6 @@ interface SingleCompileResult {
 }
 
 function compileFile(source: string, output: string, flags: CompilerFlags): SingleCompileResult {
-    // Build command line for script compiler
     let args: string[] = ["build", source, "-o", output];
 
     if (flags.optLevel > 0) {
@@ -201,7 +184,6 @@ function compileFile(source: string, output: string, flags: CompilerFlags): Sing
         args.push("--target=" + flags.target);
     }
 
-    // Execute compiler
     let result = executeCompiler(args);
 
     return {
@@ -212,20 +194,13 @@ function compileFile(source: string, output: string, flags: CompilerFlags): Sing
 }
 
 function compileDependencies(lockfile: Lockfile, outputDir: string, flags: CompilerFlags, verbose: boolean): CompileResult {
-    let result: CompileResult = {
+    // TODO: Implement dependency compilation
+    return {
         success: true,
         error: "",
         objects: [],
         warnings: []
     };
-
-    // TODO: Implement dependency compilation
-    // For each locked package:
-    // 1. Find cached build or source
-    // 2. Compile if needed
-    // 3. Add object files to result
-
-    return result;
 }
 
 interface ExecuteResult {
@@ -235,7 +210,6 @@ interface ExecuteResult {
 }
 
 function executeCompiler(args: string[]): ExecuteResult {
-    // Find oitec binary - try multiple locations
     let oitec = findOitec();
     if (oitec == "") {
         return {
@@ -245,7 +219,6 @@ function executeCompiler(args: string[]): ExecuteResult {
         };
     }
 
-    // Execute oitec with the provided arguments
     let result = process.exec(oitec, args);
     return {
         exitCode: result.exitCode,
@@ -255,31 +228,27 @@ function executeCompiler(args: string[]): ExecuteResult {
 }
 
 function findOitec(): string {
-    // Try environment variable first
     let oitecPath = process.env.get("OITEC_PATH");
     if (oitecPath != "" && oitecPath != null) {
         return oitecPath;
     }
 
-    // Try common locations
     let locations = [
-        "oitec",                              // In PATH
-        "./oitec",                            // Current directory
-        "../oite/target/debug/oite",          // Development (debug)
-        "../oite/target/release/oite",        // Development (release)
-        "/usr/local/bin/oitec",               // System install
-        process.env.get("HOME") + "/.oite/bin/oitec"  // User install
+        "oitec",
+        "./oitec",
+        "../oite/target/debug/oite",
+        "../oite/target/release/oite",
+        "/usr/local/bin/oitec",
+        process.env.get("HOME") + "/.oite/bin/oitec"
     ];
 
     let i = 0;
     while (i < locations.length) {
         let loc = locations[i];
-        // Try to execute with --help or check existence
         let result = process.exec("which", [loc]);
         if (result.exitCode == 0) {
             return result.stdout.trim();
         }
-        // Also try direct execution test
         let testResult = process.exec(loc, ["--version"]);
         if (testResult.exitCode == 0 || testResult.stdout != "" || testResult.stderr.indexOf("not found") == -1) {
             return loc;
@@ -291,7 +260,7 @@ function findOitec(): string {
 }
 
 function parseWarnings(output: string): CompileWarning[] {
-    // TODO: Parse compiler warning output
+    // TODO: Implement
     return [];
 }
 

@@ -78,6 +78,8 @@ function showHelp(): void {
     console.log("        info <pkg>       Show package info");
     console.log("        login            Login to registry");
     console.log("        publish          Publish a package");
+    console.log("        yank <pkg>@<ver> Mark a version as yanked");
+    console.log("            --undo           Unyank a version");
     console.log("");
     console.log("Run 'unroll <command> --help' for more info on a command.");
 }
