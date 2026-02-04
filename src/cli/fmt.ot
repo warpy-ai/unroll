@@ -1,5 +1,3 @@
-// unroll fmt - Format code
-
 import { loadManifest } from "../config/manifest.ot";
 
 interface FmtOptions {
@@ -36,7 +34,6 @@ function parseFmtArgs(args: string[]): FmtOptions {
 function runFmt(args: string[]): number {
     let options = parseFmtArgs(args);
 
-    // If no files specified, format all .ot files in src/
     let files = options.files;
     if (files.length == 0) {
         files = discoverSourceFiles("./src");
@@ -74,7 +71,6 @@ function runFmt(args: string[]): number {
         i = i + 1;
     }
 
-    // Summary
     if (options.check) {
         if (formatted > 0) {
             console.log(formatted + " file(s) would be reformatted");
@@ -99,21 +95,17 @@ interface FormatResult {
 }
 
 function formatFile(path: string, checkOnly: boolean): FormatResult {
-    // Read file
     let content = readFile(path);
     if (content == null) {
         return { changed: false, error: "could not read file" };
     }
 
-    // Format content
     let formatted = formatSource(content);
 
-    // Check if changed
     if (formatted == content) {
         return { changed: false, error: "" };
     }
 
-    // Write if not check-only
     if (!checkOnly) {
         let result = writeFile(path, formatted);
         if (!result.success) {
@@ -125,8 +117,6 @@ function formatFile(path: string, checkOnly: boolean): FormatResult {
 }
 
 function formatSource(source: string): string {
-    // TODO: Implement actual formatting
-    // For now, just normalize line endings and trailing whitespace
     let lines = source.split("\n");
     let result: string[] = [];
 
@@ -137,7 +127,6 @@ function formatSource(source: string): string {
         i = i + 1;
     }
 
-    // Ensure single trailing newline
     let output = result.join("\n");
     if (output.length > 0 && output[output.length - 1] != "\n") {
         output = output + "\n";
@@ -155,13 +144,39 @@ function trimRight(s: string): string {
 }
 
 function discoverSourceFiles(dir: string): string[] {
-    // TODO: Implement file discovery
-    return [];
+    let files: string[] = [];
+    discoverSourceFilesRecursive(dir, files);
+    return files;
+}
+
+function discoverSourceFilesRecursive(dir: string, files: string[]): void {
+    if (!fs.existsSync(dir)) {
+        return;
+    }
+
+    let entries = fs.readdirSync(dir);
+    let i = 0;
+    while (i < entries.length) {
+        let entry = entries[i];
+        let fullPath = dir + "/" + entry;
+
+        let stats = fs.statSync(fullPath);
+        if (stats && stats.isDirectory && stats.isDirectory()) {
+            discoverSourceFilesRecursive(fullPath, files);
+        } else if (entry.indexOf(".ot") == entry.length - 3) {
+            files.push(fullPath);
+        }
+
+        i = i + 1;
+    }
 }
 
 function readFile(path: string): string | null {
-    // TODO: Implement file reading
-    return null;
+    try {
+        return fs.readFileSync(path);
+    } catch (e) {
+        return null;
+    }
 }
 
 interface WriteResult {
@@ -170,8 +185,12 @@ interface WriteResult {
 }
 
 function writeFile(path: string, content: string): WriteResult {
-    // TODO: Implement file writing
-    return { success: true, error: "" };
+    try {
+        fs.writeFileSync(path, content);
+        return { success: true, error: "" };
+    } catch (e) {
+        return { success: false, error: "Failed to write file" };
+    }
 }
 
 export { runFmt, FmtOptions };

@@ -1,5 +1,3 @@
-// unroll doc - Generate documentation
-
 import { loadManifest } from "../config/manifest.ot";
 
 interface DocOptions {
@@ -36,7 +34,6 @@ function parseDocArgs(args: string[]): DocOptions {
 function runDoc(args: string[]): number {
     let options = parseDocArgs(args);
 
-    // Load manifest
     let manifest = loadManifest("./unroll.toml");
     if (manifest == null) {
         console.error("Error: could not find unroll.toml");
@@ -45,10 +42,8 @@ function runDoc(args: string[]): number {
 
     console.log("Generating documentation for " + manifest.name + "...");
 
-    // Discover source files
     let files = discoverSourceFiles("./src");
 
-    // Generate docs
     let outputDir = "./target/doc";
     let result = generateDocs(files, outputDir, options);
 
@@ -59,7 +54,6 @@ function runDoc(args: string[]): number {
 
     console.log("Documentation written to " + outputDir);
 
-    // Open in browser if requested
     if (options.open) {
         let indexPath = outputDir + "/index.html";
         openInBrowser(indexPath);
@@ -74,17 +68,14 @@ interface DocResult {
 }
 
 function generateDocs(files: string[], outputDir: string, options: DocOptions): DocResult {
-    // Create output directory
     let result = createDirectory(outputDir);
     if (!result.success) {
         return result;
     }
 
-    // Generate index.html
     let indexContent = generateIndexPage(files);
     writeFile(outputDir + "/index.html", indexContent);
 
-    // Generate page for each file
     let i = 0;
     while (i < files.length) {
         let file = files[i];
@@ -97,7 +88,6 @@ function generateDocs(files: string[], outputDir: string, options: DocOptions): 
         i = i + 1;
     }
 
-    // Copy CSS
     writeFile(outputDir + "/style.css", getStylesheet());
 
     return { success: true, error: "" };
@@ -138,7 +128,6 @@ function generateFileDocs(file: string, content: string, includePrivate: boolean
     html = html + "<h1>" + moduleName + "</h1>\n";
     html = html + "<p><a href=\"index.html\">Back to index</a></p>\n";
 
-    // Extract and render doc comments and exports
     let exports = extractExports(content, includePrivate);
 
     if (exports.functions.length > 0) {
@@ -193,15 +182,11 @@ interface Exports {
 }
 
 function extractExports(content: string, includePrivate: boolean): Exports {
-    // TODO: Implement proper parsing
-    return {
-        functions: [],
-        types: []
-    };
+    // TODO: Implement
+    return { functions: [], types: [] };
 }
 
 function fileToModuleName(file: string): string {
-    // Convert ./src/foo/bar.ot to foo/bar
     let name = file;
     if (name.indexOf("./src/") == 0) {
         name = name.substring(6);
@@ -241,13 +226,39 @@ pre {
 }
 
 function discoverSourceFiles(dir: string): string[] {
-    // TODO: Implement file discovery
-    return [];
+    let files: string[] = [];
+    discoverSourceFilesRecursive(dir, files);
+    return files;
+}
+
+function discoverSourceFilesRecursive(dir: string, files: string[]): void {
+    if (!fs.existsSync(dir)) {
+        return;
+    }
+
+    let entries = fs.readdirSync(dir);
+    let i = 0;
+    while (i < entries.length) {
+        let entry = entries[i];
+        let fullPath = dir + "/" + entry;
+
+        let stats = fs.statSync(fullPath);
+        if (stats && stats.isDirectory && stats.isDirectory()) {
+            discoverSourceFilesRecursive(fullPath, files);
+        } else if (entry.indexOf(".ot") == entry.length - 3) {
+            files.push(fullPath);
+        }
+
+        i = i + 1;
+    }
 }
 
 function readFile(path: string): string | null {
-    // TODO: Implement
-    return null;
+    try {
+        return fs.readFileSync(path);
+    } catch (e) {
+        return null;
+    }
 }
 
 interface Result {
@@ -256,17 +267,39 @@ interface Result {
 }
 
 function createDirectory(path: string): Result {
-    // TODO: Implement
-    return { success: true, error: "" };
+    try {
+        if (!fs.existsSync(path)) {
+            fs.mkdirSync(path, { recursive: true });
+        }
+        return { success: true, error: "" };
+    } catch (e) {
+        return { success: false, error: "Failed to create directory" };
+    }
 }
 
 function writeFile(path: string, content: string): Result {
-    // TODO: Implement
-    return { success: true, error: "" };
+    try {
+        fs.writeFileSync(path, content);
+        return { success: true, error: "" };
+    } catch (e) {
+        return { success: false, error: "Failed to write file" };
+    }
 }
 
 function openInBrowser(path: string): void {
-    // TODO: Implement browser opening
+    let platform = process.env.get("OSTYPE");
+    if (platform == null || platform == "") {
+        let unameResult = process.exec("uname", []);
+        platform = unameResult.stdout.trim();
+    }
+
+    if (platform == "darwin" || platform.indexOf("Darwin") >= 0) {
+        process.exec("open", [path]);
+    } else if (platform.indexOf("linux") >= 0 || platform.indexOf("Linux") >= 0) {
+        process.exec("xdg-open", [path]);
+    } else {
+        process.exec("start", [path]);
+    }
 }
 
 export { runDoc, DocOptions };

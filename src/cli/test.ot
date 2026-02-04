@@ -1,5 +1,3 @@
-// unroll test - Run project tests
-
 import { loadManifest, Manifest } from "../config/manifest.ot";
 import { discoverTests } from "../build/test_discovery.ot";
 
@@ -41,7 +39,6 @@ function parseTestArgs(args: string[]): TestOptions {
                 options.jobs = parseInt(args[i]);
             }
         } else if (arg[0] != "-") {
-            // Positional argument as filter
             options.filter = arg;
         }
 
@@ -54,7 +51,6 @@ function parseTestArgs(args: string[]): TestOptions {
 function runTest(args: string[]): number {
     let options = parseTestArgs(args);
 
-    // Load manifest
     let manifest = loadManifest("./unroll.toml");
     if (manifest == null) {
         console.error("Error: could not find unroll.toml");
@@ -64,7 +60,6 @@ function runTest(args: string[]): number {
     console.log("Running tests for " + manifest.name + "...");
     console.log("");
 
-    // Discover test files
     let tests = discoverTests("./tests", options.filter);
 
     if (tests.length == 0) {
@@ -75,7 +70,6 @@ function runTest(args: string[]): number {
     console.log("Found " + tests.length + " test(s)");
     console.log("");
 
-    // Run tests
     let passed = 0;
     let failed = 0;
     let skipped = 0;
@@ -106,11 +100,9 @@ function runTest(args: string[]): number {
         i = i + 1;
     }
 
-    // Summary
     console.log("");
     console.log("Results: " + passed + " passed, " + failed + " failed, " + skipped + " skipped");
 
-    // Coverage report
     if (options.coverage) {
         console.log("");
         console.log("Generating coverage report...");
@@ -132,12 +124,54 @@ interface TestResult {
 }
 
 function runSingleTest(test: TestFile, options: TestOptions): TestResult {
-    // TODO: Implement test execution
-    return {
-        status: "passed",
-        message: "",
-        duration: 0
-    };
+    let oitec = findOitec();
+    if (oitec == "") {
+        return {
+            status: "failed",
+            message: "Could not find oite compiler",
+            duration: 0
+        };
+    }
+
+    let result = process.exec(oitec, [test.path]);
+
+    if (result.exitCode == 0) {
+        if (options.nocapture && result.stdout != "") {
+            console.log(result.stdout);
+        }
+        return { status: "passed", message: "", duration: 0 };
+    }
+
+    let message = result.stderr != "" ? result.stderr : result.stdout;
+    return { status: "failed", message: message.trim(), duration: 0 };
+}
+
+function findOitec(): string {
+    let oitecPath = process.env.get("OITEC_PATH");
+    if (oitecPath != "" && oitecPath != null) {
+        return oitecPath;
+    }
+
+    let locations = [
+        "oitec",
+        "./oitec",
+        "../oite/target/debug/oite",
+        "../oite/target/release/oite",
+        "/usr/local/bin/oitec",
+        process.env.get("HOME") + "/.oite/bin/oitec"
+    ];
+
+    let i = 0;
+    while (i < locations.length) {
+        let loc = locations[i];
+        let testResult = process.exec(loc, ["--version"]);
+        if (testResult.exitCode == 0) {
+            return loc;
+        }
+        i = i + 1;
+    }
+
+    return "";
 }
 
 function generateCoverageReport(): void {
