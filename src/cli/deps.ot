@@ -1,6 +1,6 @@
 // Dependency management commands: add, remove, update
 
-import { loadManifest, saveManifest, Manifest } from "../config/manifest.ot";
+import { loadManifest, saveManifest, Manifest, Dependency } from "../config/manifest.ot";
 import { resolveDependencies } from "../resolver/mod.ot";
 import { writeLockfile } from "../config/lockfile.ot";
 
@@ -138,11 +138,55 @@ function parsePackageSpec(spec: string): PackageSpec {
 }
 
 function addDependency(manifest: Manifest, name: string, version: string, options: AddOptions): void {
-    // TODO: Implement
+    // Check if dependency already exists
+    let i = 0;
+    while (i < manifest.dependencies.length) {
+        if (manifest.dependencies[i].name == name) {
+            // Update existing dependency
+            manifest.dependencies[i].version = version;
+            manifest.dependencies[i].optional = options.optional;
+            manifest.dependencies[i].features = options.features;
+            return;
+        }
+        i = i + 1;
+    }
+
+    // Add new dependency
+    manifest.dependencies.push({
+        name: name,
+        version: version,
+        optional: options.optional,
+        features: options.features,
+        git: "",
+        branch: "",
+        path: ""
+    });
 }
 
 function addDevDependency(manifest: Manifest, name: string, version: string, options: AddOptions): void {
-    // TODO: Implement
+    // Check if dependency already exists
+    let i = 0;
+    while (i < manifest.devDependencies.length) {
+        if (manifest.devDependencies[i].name == name) {
+            // Update existing dependency
+            manifest.devDependencies[i].version = version;
+            manifest.devDependencies[i].optional = options.optional;
+            manifest.devDependencies[i].features = options.features;
+            return;
+        }
+        i = i + 1;
+    }
+
+    // Add new dependency
+    manifest.devDependencies.push({
+        name: name,
+        version: version,
+        optional: options.optional,
+        features: options.features,
+        git: "",
+        branch: "",
+        path: ""
+    });
 }
 
 // ============================================================================
@@ -205,7 +249,27 @@ function runRemove(args: string[]): number {
 }
 
 function removeDependency(manifest: Manifest, name: string): void {
-    // TODO: Implement
+    // Remove from dependencies
+    let newDeps: any[] = [];
+    let i = 0;
+    while (i < manifest.dependencies.length) {
+        if (manifest.dependencies[i].name != name) {
+            newDeps.push(manifest.dependencies[i]);
+        }
+        i = i + 1;
+    }
+    manifest.dependencies = newDeps;
+
+    // Also remove from dev-dependencies
+    let newDevDeps: any[] = [];
+    i = 0;
+    while (i < manifest.devDependencies.length) {
+        if (manifest.devDependencies[i].name != name) {
+            newDevDeps.push(manifest.devDependencies[i]);
+        }
+        i = i + 1;
+    }
+    manifest.devDependencies = newDevDeps;
 }
 
 // ============================================================================

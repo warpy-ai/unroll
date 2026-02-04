@@ -2,7 +2,8 @@
 
 import { Manifest, Dependency } from "../config/manifest.ot";
 import { LockedPackage } from "../config/lockfile.ot";
-import { fetchPackageVersions, PackageVersion } from "../registry/client.ot";
+import { fetchPackageVersions, PackageVersion, VersionDependency } from "../registry/client.ot";
+import { getRegistryConfig } from "../registry/config.ot";
 
 interface ResolveResult {
     packages: LockedPackage[];
@@ -95,9 +96,15 @@ function resolveSingle(dep: Dependency, visited: string[], resolved: LockedPacka
     // Resolve transitive dependencies
     let i = 0;
     while (i < selected.dependencies.length) {
+        let depInfo = selected.dependencies[i];
+        // Skip optional dependencies for now
+        if (depInfo.optional) {
+            i = i + 1;
+            continue;
+        }
         let transDep: Dependency = {
-            name: selected.dependencies[i].name,
-            version: selected.dependencies[i].version,
+            name: depInfo.name,
+            version: depInfo.req,  // API returns "req" not "version"
             optional: false,
             features: [],
             git: "",
@@ -115,14 +122,18 @@ function resolveSingle(dep: Dependency, visited: string[], resolved: LockedPacka
     let depNames: string[] = [];
     i = 0;
     while (i < selected.dependencies.length) {
-        depNames.push(selected.dependencies[i].name + " " + selected.dependencies[i].version);
+        let depInfo = selected.dependencies[i];
+        if (!depInfo.optional) {
+            depNames.push(depInfo.name + " " + depInfo.req);
+        }
         i = i + 1;
     }
 
+    let config = getRegistryConfig();
     resolved.push({
         name: dep.name,
         version: selected.version,
-        source: "registry+https://registry.oite.org",
+        source: "registry+" + config.url,
         checksum: selected.checksum,
         dependencies: depNames
     });

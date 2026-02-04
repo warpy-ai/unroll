@@ -165,13 +165,20 @@ interface Result {
 }
 
 function readFile(path: string): string | null {
-    // TODO: Implement file reading
-    return null;
+    try {
+        return fs.readFileSync(path);
+    } catch (e) {
+        return null;
+    }
 }
 
 function writeFile(path: string, content: string): Result {
-    // TODO: Implement file writing
-    return { success: true, error: "" };
+    try {
+        fs.writeFileSync(path, content);
+        return { success: true, error: "" };
+    } catch (e) {
+        return { success: false, error: "Failed to write file: " + path };
+    }
 }
 
 export {
