@@ -1,5 +1,3 @@
-// Test discovery - find and enumerate test files
-
 interface TestFile {
     name: string;
     path: string;
@@ -8,48 +6,56 @@ interface TestFile {
 function discoverTests(dir: string, filter: string): TestFile[] {
     let tests: TestFile[] = [];
 
-    // Find all test files in the tests directory
-    let files = listDirectory(dir);
+    discoverTestsRecursive(dir, filter, tests);
 
-    let i = 0;
-    while (i < files.length) {
-        let file = files[i];
-
-        // Check if it's a test file
-        if (isTestFile(file)) {
-            let name = getTestName(file);
-
-            // Apply filter if specified
-            if (filter == "" || matchesFilter(name, filter)) {
-                tests.push({
-                    name: name,
-                    path: dir + "/" + file
-                });
-            }
-        }
-
-        i = i + 1;
+    if (fs.existsSync("./src")) {
+        discoverTestsInSrc("./src", filter, tests);
     }
 
-    // Sort tests by name
     tests = sortTests(tests);
-
     return tests;
 }
 
-function isTestFile(filename: string): boolean {
-    // Test files end with _test.ot or .test.ot
-    if (filename.indexOf("_test.ot") == filename.length - 10) {
-        return true;
+function discoverTestsRecursive(dir: string, filter: string, tests: TestFile[]): void {
+    if (!fs.existsSync(dir)) {
+        return;
     }
-    if (filename.indexOf(".test.ot") == filename.length - 10) {
-        return true;
+
+    let entries = fs.readdirSync(dir);
+    for (let entry of entries) {
+        let fullPath = dir + "/" + entry;
+
+        let stats = fs.statSync(fullPath);
+        if (stats && stats.isDirectory && stats.isDirectory()) {
+            discoverTestsRecursive(fullPath, filter, tests);
+        } else if (entry.indexOf(".ot") == entry.length - 3) {
+            let name = getTestName(entry);
+            if (filter == "" || matchesFilter(name, filter)) {
+                tests.push({ name: name, path: fullPath });
+            }
+        }
     }
-    // Or are in tests/ directory and end with .ot
-    if (filename.indexOf(".ot") == filename.length - 5) {
-        return true;
+}
+
+function discoverTestsInSrc(dir: string, filter: string, tests: TestFile[]): void {
+    if (!fs.existsSync(dir)) {
+        return;
     }
-    return false;
+
+    let entries = fs.readdirSync(dir);
+    for (let entry of entries) {
+        let fullPath = dir + "/" + entry;
+
+        let stats = fs.statSync(fullPath);
+        if (stats && stats.isDirectory && stats.isDirectory()) {
+            discoverTestsInSrc(fullPath, filter, tests);
+        } else if (entry.indexOf("_test.ot") == entry.length - 8 || entry.indexOf(".test.ot") == entry.length - 8) {
+            let name = getTestName(entry);
+            if (filter == "" || matchesFilter(name, filter)) {
+                tests.push({ name: name, path: fullPath });
+            }
+        }
+    }
 }
 
 function getTestName(filename: string): string {
@@ -101,25 +107,16 @@ function matchesFilter(name: string, filter: string): boolean {
 
 function sortTests(tests: TestFile[]): TestFile[] {
     // Simple bubble sort by name
-    let i = 0;
-    while (i < tests.length) {
-        let j = i + 1;
-        while (j < tests.length) {
+    for (let i = 0; i < tests.length; i = i + 1) {
+        for (let j = i + 1; j < tests.length; j = j + 1) {
             if (tests[j].name < tests[i].name) {
                 let temp = tests[i];
                 tests[i] = tests[j];
                 tests[j] = temp;
             }
-            j = j + 1;
         }
-        i = i + 1;
     }
     return tests;
-}
-
-function listDirectory(path: string): string[] {
-    // TODO: Implement directory listing
-    return [];
 }
 
 export { discoverTests, TestFile };

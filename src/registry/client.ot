@@ -1,11 +1,4 @@
-// Registry client - HTTP client for package registry
-// Uses oite's built-in fetch() function
-
 import { getRegistryConfig, RegistryConfig } from "./config.ot";
-
-// ============================================================================
-// Types
-// ============================================================================
 
 interface PackageVersion {
     version: string;
@@ -70,10 +63,6 @@ interface UserInfo {
     avatar_url: string;
 }
 
-// ============================================================================
-// HTTP Helpers
-// ============================================================================
-
 interface HttpResponse {
     status: number;
     statusText: string;
@@ -130,10 +119,6 @@ function httpPut(url: string, body: string, token?: string, contentType?: string
     let response = fetch(url, options);
     return response;
 }
-
-// ============================================================================
-// JSON Parsing (simple implementation until @rolls/json is available)
-// ============================================================================
 
 function parseJson(text: string): any {
     // Use a simple recursive descent parser
@@ -344,19 +329,19 @@ function parseFloat(s: string): number {
     let decimal = false;
     let decimalPlace = 0.1;
     let negative = false;
-    let i = 0;
+    let start = 0;
 
     if (s.length > 0 && s[0] == '-') {
         negative = true;
-        i = 1;
+        start = 1;
     }
 
-    while (i < s.length) {
+    for (let i = start; i < s.length; i = i + 1) {
         let ch = s[i];
         if (ch == '.') {
             decimal = true;
         } else if (ch >= '0' && ch <= '9') {
-            let digit = ch.charCodeAt(0) - '0'.charCodeAt(0);
+            let digit = ch.charCodeAt(0) - 48;
             if (decimal) {
                 result = result + digit * decimalPlace;
                 decimalPlace = decimalPlace * 0.1;
@@ -364,7 +349,6 @@ function parseFloat(s: string): number {
                 result = result * 10 + digit;
             }
         }
-        i = i + 1;
     }
 
     if (negative) {
@@ -373,14 +357,9 @@ function parseFloat(s: string): number {
     return result;
 }
 
-// ============================================================================
-// URL Encoding
-// ============================================================================
-
 function encodePackageName(name: string): string {
     let encoded = "";
-    let i = 0;
-    while (i < name.length) {
+    for (let i = 0; i < name.length; i = i + 1) {
         let c = name[i];
         if (c == "@") {
             encoded = encoded + "%40";
@@ -389,40 +368,33 @@ function encodePackageName(name: string): string {
         } else {
             encoded = encoded + c;
         }
-        i = i + 1;
     }
     return encoded;
 }
 
 function encodeURIComponent(str: string): string {
     let result = "";
-    let i = 0;
-    while (i < str.length) {
+    for (let i = 0; i < str.length; i = i + 1) {
         let c = str[i];
-        let code = c.charCodeAt(0);
 
         // Safe characters: A-Z a-z 0-9 - _ . ~
-        if ((code >= 65 && code <= 90) ||   // A-Z
-            (code >= 97 && code <= 122) ||  // a-z
-            (code >= 48 && code <= 57) ||   // 0-9
+        if ((c >= "A" && c <= "Z") ||
+            (c >= "a" && c <= "z") ||
+            (c >= "0" && c <= "9") ||
             c == '-' || c == '_' || c == '.' || c == '~') {
             result = result + c;
         } else {
             // Encode as %XX
+            let code = c.charCodeAt(0);
             let hex = code.toString(16).toUpperCase();
             if (hex.length == 1) {
                 hex = "0" + hex;
             }
             result = result + "%" + hex;
         }
-        i = i + 1;
     }
     return result;
 }
-
-// ============================================================================
-// API Functions
-// ============================================================================
 
 interface ApiResult<T> {
     data: T | null;
@@ -549,9 +521,93 @@ function publishPackage(tarball: string, token: string): ApiResult<boolean> {
     return { data: true, error: "" };
 }
 
-// ============================================================================
-// Exports
-// ============================================================================
+/**
+ * Fetch all available versions for a package (for dependency resolution)
+ */
+interface VersionsResult {
+    versions: PackageVersion[];
+    error: string;
+}
+
+function fetchPackageVersions(name: string): VersionsResult {
+    // First get package info to get version list
+    let infoResult = getPackageInfo(name);
+    if (infoResult.error != "") {
+        return { versions: [], error: infoResult.error };
+    }
+
+    if (infoResult.data == null) {
+        return { versions: [], error: "Package not found: " + name };
+    }
+
+    let info = infoResult.data as PackageInfo;
+    let versions: PackageVersion[] = [];
+
+    // Fetch details for each version
+    for (let ver of info.versions) {
+        let verResult = getPackageVersion(name, ver);
+        if (verResult.error == "" && verResult.data != null) {
+            versions.push(verResult.data as PackageVersion);
+        }
+    }
+
+    // Sort versions (newest first) - simple string comparison
+    // TODO: Proper semver sorting
+    versions = sortVersions(versions);
+
+    return { versions: versions, error: "" };
+}
+
+function sortVersions(versions: PackageVersion[]): PackageVersion[] {
+    // Simple bubble sort by version string (descending)
+    for (let i = 0; i < versions.length; i = i + 1) {
+        for (let j = i + 1; j < versions.length; j = j + 1) {
+            if (compareVersions(versions[j].version, versions[i].version) > 0) {
+                let temp = versions[i];
+                versions[i] = versions[j];
+                versions[j] = temp;
+            }
+        }
+    }
+    return versions;
+}
+
+function compareVersions(a: string, b: string): number {
+    // Simple semver comparison
+    let aParts = a.split(".");
+    let bParts = b.split(".");
+
+    for (let i = 0; i < 3; i = i + 1) {
+        let aNum = 0;
+        let bNum = 0;
+
+        if (i < aParts.length) {
+            aNum = parseVersionPart(aParts[i]);
+        }
+        if (i < bParts.length) {
+            bNum = parseVersionPart(bParts[i]);
+        }
+
+        if (aNum > bNum) return 1;
+        if (aNum < bNum) return -1;
+    }
+
+    return 0;
+}
+
+function parseVersionPart(s: string): number {
+    let result = 0;
+    for (let i = 0; i < s.length; i = i + 1) {
+        let c = s[i];
+        if (c >= "0" && c <= "9") {
+            result = result * 10 + (c.charCodeAt(0) - 48);
+        } else {
+            break; // Stop at first non-digit (e.g., "1-beta")
+        }
+    }
+    return result;
+}
+
 
 export {
     // Types
@@ -564,6 +620,7 @@ export {
     SearchMeta,
     UserInfo,
     ApiResult,
+    VersionsResult,
 
     // Functions
     searchPackages,
@@ -571,6 +628,7 @@ export {
     getPackageVersion,
     validateToken,
     publishPackage,
+    fetchPackageVersions,
     encodePackageName,
     parseJson
 };

@@ -1,13 +1,7 @@
-// Build commands: build, run, watch, clean
-
 import { loadManifest, Manifest } from "../config/manifest.ot";
 import { loadLockfile, Lockfile } from "../config/lockfile.ot";
 import { compileSources } from "../build/compiler.ot";
 import { linkBinary } from "../build/linker.ot";
-
-// ============================================================================
-// unroll build
-// ============================================================================
 
 interface BuildOptions {
     release: boolean;
@@ -15,7 +9,7 @@ interface BuildOptions {
     target: string;
     jobs: number;
     verbose: boolean;
-    noStd: boolean;  // Disable implicit @rolls/std prelude
+    noStd: boolean;
 }
 
 function parseBuildArgs(args: string[]): BuildOptions {
@@ -23,20 +17,19 @@ function parseBuildArgs(args: string[]): BuildOptions {
         release: false,
         dist: false,
         target: "native",
-        jobs: 0,  // 0 = auto-detect
+        jobs: 0,
         verbose: false,
         noStd: false
     };
 
-    let i = 0;
-    while (i < args.length) {
+    for (let i = 0; i < args.length; i = i + 1) {
         let arg = args[i];
 
         if (arg == "--release" || arg == "-r") {
             options.release = true;
         } else if (arg == "--dist") {
             options.dist = true;
-            options.release = true;  // dist implies release
+            options.release = true;
         } else if (arg == "--target") {
             i = i + 1;
             if (i < args.length) {
@@ -52,8 +45,6 @@ function parseBuildArgs(args: string[]): BuildOptions {
         } else if (arg == "--no-std") {
             options.noStd = true;
         }
-
-        i = i + 1;
     }
 
     return options;
@@ -62,14 +53,12 @@ function parseBuildArgs(args: string[]): BuildOptions {
 function runBuild(args: string[]): number {
     let options = parseBuildArgs(args);
 
-    // Load manifest
     let manifest = loadManifest("./unroll.toml");
     if (manifest == null) {
         console.error("Error: could not find unroll.toml");
         return 1;
     }
 
-    // Load lockfile
     let lockfile = loadLockfile("./unroll.lock");
 
     let profile = "dev";
@@ -81,7 +70,6 @@ function runBuild(args: string[]): number {
 
     console.log("Building " + manifest.name + " (" + profile + ")...");
 
-    // Compile sources
     let compileResult = compileSources(manifest, lockfile, {
         profile: profile,
         target: options.target,
@@ -94,7 +82,6 @@ function runBuild(args: string[]): number {
         return 1;
     }
 
-    // Link binary
     let linkResult = linkBinary(manifest, compileResult.objects, {
         profile: profile,
         target: options.target
@@ -111,10 +98,6 @@ function runBuild(args: string[]): number {
     return 0;
 }
 
-// ============================================================================
-// unroll run
-// ============================================================================
-
 interface RunOptions {
     release: boolean;
     args: string[];
@@ -127,8 +110,7 @@ function parseRunArgs(args: string[]): RunOptions {
     };
 
     let foundSeparator = false;
-    let i = 0;
-    while (i < args.length) {
+    for (let i = 0; i < args.length; i = i + 1) {
         let arg = args[i];
 
         if (arg == "--") {
@@ -138,8 +120,6 @@ function parseRunArgs(args: string[]): RunOptions {
         } else if (arg == "--release" || arg == "-r") {
             options.release = true;
         }
-
-        i = i + 1;
     }
 
     return options;
@@ -148,7 +128,6 @@ function parseRunArgs(args: string[]): RunOptions {
 function runRun(args: string[]): number {
     let options = parseRunArgs(args);
 
-    // Build first
     let buildArgs: string[] = [];
     if (options.release) {
         buildArgs.push("--release");
@@ -159,7 +138,6 @@ function runRun(args: string[]): number {
         return buildResult;
     }
 
-    // Load manifest for binary name
     let manifest = loadManifest("./unroll.toml");
     if (manifest == null) {
         return 1;
@@ -172,19 +150,22 @@ function runRun(args: string[]): number {
     console.log("Running " + binaryPath + "...");
     console.log("");
 
-    // Execute the binary
     let exitCode = executeProcess(binaryPath, options.args);
     return exitCode;
 }
 
 function executeProcess(path: string, args: string[]): number {
-    // TODO: Implement process execution
-    return 0;
-}
+    let result = process.exec(path, args);
 
-// ============================================================================
-// unroll watch
-// ============================================================================
+    if (result.stdout != "") {
+        console.log(result.stdout);
+    }
+    if (result.stderr != "") {
+        console.error(result.stderr);
+    }
+
+    return result.exitCode;
+}
 
 interface WatchOptions {
     release: boolean;
@@ -197,8 +178,7 @@ function parseWatchArgs(args: string[]): WatchOptions {
         run: false
     };
 
-    let i = 0;
-    while (i < args.length) {
+    for (let i = 0; i < args.length; i = i + 1) {
         let arg = args[i];
 
         if (arg == "--release" || arg == "-r") {
@@ -206,8 +186,6 @@ function parseWatchArgs(args: string[]): WatchOptions {
         } else if (arg == "--run") {
             options.run = true;
         }
-
-        i = i + 1;
     }
 
     return options;
@@ -220,22 +198,18 @@ function runWatch(args: string[]): number {
     console.log("Press Ctrl+C to stop");
     console.log("");
 
-    // Initial build
     let buildArgs: string[] = [];
     if (options.release) {
         buildArgs.push("--release");
     }
     runBuild(buildArgs);
 
-    // Watch loop
-    // TODO: Implement file watcher
     watchFiles("./src", () => {
         console.log("");
         console.log("Change detected, rebuilding...");
         runBuild(buildArgs);
 
         if (options.run) {
-            // Restart the process
             let manifest = loadManifest("./unroll.toml");
             if (manifest != null) {
                 let profile = options.release ? "release" : "dev";
@@ -249,17 +223,12 @@ function runWatch(args: string[]): number {
 }
 
 function watchFiles(path: string, callback: () => void): void {
-    // TODO: Implement file watcher using fs events
+    // TODO: Implement using fs events
 }
-
-// ============================================================================
-// unroll clean
-// ============================================================================
 
 function runClean(args: string[]): number {
     console.log("Cleaning build artifacts...");
 
-    // Remove target directory
     let result = removeDirectory("./target");
     if (!result.success) {
         console.error("Error cleaning: " + result.error);
@@ -276,20 +245,25 @@ interface Result {
 }
 
 function removeDirectory(path: string): Result {
-    // TODO: Implement directory removal
+    if (!fs.existsSync(path)) {
+        return { success: true, error: "" };
+    }
+
+    let result = process.exec("rm", ["-rf", path]);
+    if (result.exitCode != 0) {
+        return { success: false, error: result.stderr };
+    }
+
     return { success: true, error: "" };
 }
 
 function parseInt(s: string): number {
-    // Simple parseInt implementation
     let result = 0;
-    let i = 0;
-    while (i < s.length) {
+    for (let i = 0; i < s.length; i = i + 1) {
         let c = s[i];
         if (c >= "0" && c <= "9") {
-            result = result * 10 + (c.charCodeAt(0) - "0".charCodeAt(0));
+            result = result * 10 + (c.charCodeAt(0) - 48);
         }
-        i = i + 1;
     }
     return result;
 }

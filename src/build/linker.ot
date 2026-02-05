@@ -65,10 +65,8 @@ function buildLinkerArgs(objects: string[], output: string, options: LinkOptions
     args.push(output);
 
     // Object files
-    let i = 0;
-    while (i < objects.length) {
-        args.push(objects[i]);
-        i = i + 1;
+    for (let obj of objects) {
+        args.push(obj);
     }
 
     // LTO flags

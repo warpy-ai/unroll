@@ -2,7 +2,8 @@
 
 import { Manifest, Dependency } from "../config/manifest.ot";
 import { LockedPackage } from "../config/lockfile.ot";
-import { fetchPackageVersions, PackageVersion } from "../registry/client.ot";
+import { fetchPackageVersions, PackageVersion, VersionDependency } from "../registry/client.ot";
+import { getRegistryConfig } from "../registry/config.ot";
 
 interface ResolveResult {
     packages: LockedPackage[];
@@ -40,25 +41,19 @@ function resolveDependencies(manifest: Manifest, noStd: boolean = false): Resolv
     }
 
     // Resolve all direct dependencies
-    let i = 0;
-    while (i < manifest.dependencies.length) {
-        let dep = manifest.dependencies[i];
+    for (let dep of manifest.dependencies) {
         let result = resolveSingle(dep, visited, resolved);
         if (result.error != "") {
             return { packages: [], error: result.error };
         }
-        i = i + 1;
     }
 
     // Resolve dev dependencies
-    i = 0;
-    while (i < manifest.devDependencies.length) {
-        let dep = manifest.devDependencies[i];
+    for (let dep of manifest.devDependencies) {
         let result = resolveSingle(dep, visited, resolved);
         if (result.error != "") {
             return { packages: [], error: result.error };
         }
-        i = i + 1;
     }
 
     // Sort for deterministic lockfile
@@ -93,11 +88,14 @@ function resolveSingle(dep: Dependency, visited: string[], resolved: LockedPacka
     }
 
     // Resolve transitive dependencies
-    let i = 0;
-    while (i < selected.dependencies.length) {
+    for (let depInfo of selected.dependencies) {
+        // Skip optional dependencies for now
+        if (depInfo.optional) {
+            continue;
+        }
         let transDep: Dependency = {
-            name: selected.dependencies[i].name,
-            version: selected.dependencies[i].version,
+            name: depInfo.name,
+            version: depInfo.req,  // API returns "req" not "version"
             optional: false,
             features: [],
             git: "",
@@ -108,21 +106,21 @@ function resolveSingle(dep: Dependency, visited: string[], resolved: LockedPacka
         if (result.error != "") {
             return result;
         }
-        i = i + 1;
     }
 
     // Add to resolved list
     let depNames: string[] = [];
-    i = 0;
-    while (i < selected.dependencies.length) {
-        depNames.push(selected.dependencies[i].name + " " + selected.dependencies[i].version);
-        i = i + 1;
+    for (let depInfo of selected.dependencies) {
+        if (!depInfo.optional) {
+            depNames.push(depInfo.name + " " + depInfo.req);
+        }
     }
 
+    let config = getRegistryConfig();
     resolved.push({
         name: dep.name,
         version: selected.version,
-        source: "registry+https://registry.oite.org",
+        source: "registry+" + config.url,
         checksum: selected.checksum,
         dependencies: depNames
     });
@@ -131,12 +129,10 @@ function resolveSingle(dep: Dependency, visited: string[], resolved: LockedPacka
 }
 
 function isVisited(name: string, visited: string[]): boolean {
-    let i = 0;
-    while (i < visited.length) {
-        if (visited[i] == name) {
+    for (let v of visited) {
+        if (v == name) {
             return true;
         }
-        i = i + 1;
     }
     return false;
 }
@@ -156,23 +152,19 @@ function selectVersion(requirement: string, versions: PackageVersion[]): Package
     // Exact match
     if (requirement[0] == "=") {
         let exact = requirement.substring(1);
-        let i = 0;
-        while (i < versions.length) {
-            if (versions[i].version == exact) {
-                return versions[i];
+        for (let ver of versions) {
+            if (ver.version == exact) {
+                return ver;
             }
-            i = i + 1;
         }
         return null;
     }
 
     // Caret range (default) - ^0.1.0 means >=0.1.0, <0.2.0
-    let i = 0;
-    while (i < versions.length) {
-        if (matchesCaretRange(requirement, versions[i].version)) {
-            return versions[i];
+    for (let ver of versions) {
+        if (matchesCaretRange(requirement, ver.version)) {
+            return ver;
         }
-        i = i + 1;
     }
 
     return null;
@@ -202,18 +194,14 @@ function matchesCaretRange(requirement: string, version: string): boolean {
 
 function sortPackages(packages: LockedPackage[]): LockedPackage[] {
     // Simple bubble sort by name
-    let i = 0;
-    while (i < packages.length) {
-        let j = i + 1;
-        while (j < packages.length) {
+    for (let i = 0; i < packages.length; i = i + 1) {
+        for (let j = i + 1; j < packages.length; j = j + 1) {
             if (packages[j].name < packages[i].name) {
                 let temp = packages[i];
                 packages[i] = packages[j];
                 packages[j] = temp;
             }
-            j = j + 1;
         }
-        i = i + 1;
     }
     return packages;
 }

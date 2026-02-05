@@ -15,8 +15,7 @@ function parseArgs(args: string[]): ParsedArgs {
         version: false
     };
 
-    let i = 0;
-    while (i < args.length) {
+    for (let i = 0; i < args.length; i = i + 1) {
         let arg = args[i];
 
         if (arg == "--help" || arg == "-h") {
@@ -28,8 +27,6 @@ function parseArgs(args: string[]): ParsedArgs {
         } else {
             result.args.push(arg);
         }
-
-        i = i + 1;
     }
 
     return result;
@@ -78,6 +75,8 @@ function showHelp(): void {
     console.log("        info <pkg>       Show package info");
     console.log("        login            Login to registry");
     console.log("        publish          Publish a package");
+    console.log("        yank <pkg>@<ver> Mark a version as yanked");
+    console.log("            --undo           Unyank a version");
     console.log("");
     console.log("Run 'unroll <command> --help' for more info on a command.");
 }

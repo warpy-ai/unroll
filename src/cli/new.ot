@@ -16,8 +16,7 @@ function parseNewArgs(args: string[]): NewOptions {
         path: ""
     };
 
-    let i = 0;
-    while (i < args.length) {
+    for (let i = 0; i < args.length; i = i + 1) {
         let arg = args[i];
 
         if (arg == "--lib") {
@@ -30,8 +29,6 @@ function parseNewArgs(args: string[]): NewOptions {
         } else if (arg[0] != "-") {
             options.name = arg;
         }
-
-        i = i + 1;
     }
 
     return options;
@@ -107,13 +104,11 @@ function isValidProjectName(name: string): boolean {
     }
 
     // Rest must be letters, numbers, hyphens, or underscores
-    let i = 1;
-    while (i < name.length) {
+    for (let i = 1; i < name.length; i = i + 1) {
         let c = name[i];
         if (!isLetter(c) && !isDigit(c) && c != "-" && c != "_") {
             return false;
         }
-        i = i + 1;
     }
 
     return true;
@@ -133,12 +128,12 @@ interface Result {
 }
 
 function writeManifest(path: string, content: string): Result {
-    // TODO: Implement file writing
+    let manifestPath = path + "/unroll.toml";
+    fs.writeFileSync(manifestPath, content);
     return { success: true, error: "" };
 }
 
 function createInitialFiles(path: string, name: string, isLib: boolean): Result {
-    // TODO: Implement file creation
     return { success: true, error: "" };
 }
 

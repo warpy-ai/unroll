@@ -1,12 +1,8 @@
-// Registry configuration
-// Uses oite's built-in process.env and fs modules
-
 interface RegistryConfig {
     url: string;
     token: string;
 }
 
-// Default registry URL (testnet for development)
 const DEFAULT_REGISTRY = "http://localhost:3000/api/v1";
 
 function getRegistryConfig(): RegistryConfig {
@@ -30,7 +26,6 @@ function getRegistryConfig(): RegistryConfig {
         }
     }
 
-    // Try to load token from credentials file
     let credPath = getCredentialsPath();
     if (fileExists(credPath)) {
         let credContent = readFile(credPath);
@@ -42,7 +37,6 @@ function getRegistryConfig(): RegistryConfig {
         }
     }
 
-    // Environment variable overrides (highest priority)
     let envToken = getEnv("UNROLL_TOKEN");
     if (envToken != "") {
         config.token = envToken;
@@ -59,7 +53,7 @@ function getRegistryConfig(): RegistryConfig {
 function getConfigPath(): string {
     let home = getEnv("HOME");
     if (home == "") {
-        home = getEnv("USERPROFILE");  // Windows
+        home = getEnv("USERPROFILE");
     }
     return home + "/.unroll/config.toml";
 }
@@ -67,7 +61,7 @@ function getConfigPath(): string {
 function getCredentialsPath(): string {
     let home = getEnv("HOME");
     if (home == "") {
-        home = getEnv("USERPROFILE");  // Windows
+        home = getEnv("USERPROFILE");
     }
     return home + "/.unroll/credentials";
 }
@@ -75,7 +69,7 @@ function getCredentialsPath(): string {
 function getUnrollDir(): string {
     let home = getEnv("HOME");
     if (home == "") {
-        home = getEnv("USERPROFILE");  // Windows
+        home = getEnv("USERPROFILE");
     }
     return home + "/.unroll";
 }
@@ -87,13 +81,10 @@ function parseConfig(content: string): RegistryConfig {
     };
 
     let lines = content.split("\n");
-    let i = 0;
-    while (i < lines.length) {
-        let line = lines[i].trim();
+    for (let line of lines) {
+        line = line.trim();
 
-        // Skip comments and empty lines
         if (line == "" || line[0] == "#") {
-            i = i + 1;
             continue;
         }
 
@@ -102,7 +93,6 @@ function parseConfig(content: string): RegistryConfig {
             let key = line.substring(0, eqIndex).trim();
             let value = line.substring(eqIndex + 1).trim();
 
-            // Remove quotes
             if (value.length >= 2 && value[0] == "\"" && value[value.length - 1] == "\"") {
                 value = value.substring(1, value.length - 1);
             }
@@ -110,7 +100,6 @@ function parseConfig(content: string): RegistryConfig {
             if (key == "default" || key == "registry") {
                 config.url = value;
             } else if (key == "token") {
-                // Check for env reference
                 if (value.indexOf("env:") == 0) {
                     let envName = value.substring(4);
                     config.token = getEnv(envName);
@@ -119,26 +108,21 @@ function parseConfig(content: string): RegistryConfig {
                 }
             }
         }
-
-        i = i + 1;
     }
 
     return config;
 }
 
 function parseCredentials(content: string, registry: string): string {
-    // Simple format: registry = token
     let lines = content.split("\n");
-    let i = 0;
-    while (i < lines.length) {
-        let line = lines[i].trim();
+    for (let line of lines) {
+        line = line.trim();
 
         let eqIndex = line.indexOf("=");
         if (eqIndex > 0) {
             let url = line.substring(0, eqIndex).trim();
             let token = line.substring(eqIndex + 1).trim();
 
-            // Remove quotes from token
             if (token.length >= 2 && token[0] == "\"" && token[token.length - 1] == "\"") {
                 token = token.substring(1, token.length - 1);
             }
@@ -147,8 +131,6 @@ function parseCredentials(content: string, registry: string): string {
                 return token;
             }
         }
-
-        i = i + 1;
     }
 
     return "";
@@ -157,7 +139,6 @@ function parseCredentials(content: string, registry: string): string {
 function saveCredentials(registry: string, token: string): boolean {
     let unrollDir = getUnrollDir();
 
-    // Create .unroll directory if it doesn't exist
     if (!fileExists(unrollDir)) {
         fs.mkdirSync(unrollDir, { recursive: true });
     }
@@ -167,10 +148,6 @@ function saveCredentials(registry: string, token: string): boolean {
 
     return writeFile(credPath, content);
 }
-
-// ============================================================================
-// File I/O using oite's built-in fs module
-// ============================================================================
 
 function readFile(path: string): string | null {
     try {
@@ -192,10 +169,6 @@ function writeFile(path: string, content: string): boolean {
 function fileExists(path: string): boolean {
     return fs.existsSync(path);
 }
-
-// ============================================================================
-// Environment variables using oite's built-in process module
-// ============================================================================
 
 function getEnv(name: string): string {
     let value = process.env.get(name);

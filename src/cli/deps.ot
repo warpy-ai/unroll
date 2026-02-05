@@ -1,12 +1,6 @@
-// Dependency management commands: add, remove, update
-
-import { loadManifest, saveManifest, Manifest } from "../config/manifest.ot";
+import { loadManifest, saveManifest, Manifest, Dependency } from "../config/manifest.ot";
 import { resolveDependencies } from "../resolver/mod.ot";
 import { writeLockfile } from "../config/lockfile.ot";
-
-// ============================================================================
-// unroll add
-// ============================================================================
 
 interface AddOptions {
     packages: string[];
@@ -23,8 +17,7 @@ function parseAddArgs(args: string[]): AddOptions {
         features: []
     };
 
-    let i = 0;
-    while (i < args.length) {
+    for (let i = 0; i < args.length; i = i + 1) {
         let arg = args[i];
 
         if (arg == "--dev" || arg == "-D") {
@@ -39,8 +32,6 @@ function parseAddArgs(args: string[]): AddOptions {
         } else if (arg[0] != "-") {
             options.packages.push(arg);
         }
-
-        i = i + 1;
     }
 
     return options;
@@ -55,7 +46,6 @@ function runAdd(args: string[]): number {
         return 1;
     }
 
-    // Load current manifest
     let manifest = loadManifest("./unroll.toml");
     if (manifest == null) {
         console.error("Error: could not find unroll.toml");
@@ -63,25 +53,18 @@ function runAdd(args: string[]): number {
         return 1;
     }
 
-    // Add each package
-    let i = 0;
-    while (i < options.packages.length) {
-        let pkg = options.packages[i];
+    for (let pkg of options.packages) {
         let parsed = parsePackageSpec(pkg);
 
         console.log("Adding " + parsed.name + "@" + parsed.version + "...");
 
-        // Add to appropriate section
         if (options.dev) {
             addDevDependency(manifest, parsed.name, parsed.version, options);
         } else {
             addDependency(manifest, parsed.name, parsed.version, options);
         }
-
-        i = i + 1;
     }
 
-    // Resolve dependencies
     console.log("Resolving dependencies...");
     let resolved = resolveDependencies(manifest);
     if (resolved.error != "") {
@@ -89,7 +72,6 @@ function runAdd(args: string[]): number {
         return 1;
     }
 
-    // Save manifest and lockfile
     let result = saveManifest("./unroll.toml", manifest);
     if (!result.success) {
         console.error("Error saving manifest: " + result.error);
@@ -112,10 +94,8 @@ interface PackageSpec {
 }
 
 function parsePackageSpec(spec: string): PackageSpec {
-    // Handle @scope/name@version format
     let atIndex = spec.lastIndexOf("@");
 
-    // If @ is at position 0, it's a scoped package, look for second @
     if (atIndex == 0) {
         let secondAt = spec.indexOf("@", 1);
         if (secondAt > 0) {
@@ -138,16 +118,46 @@ function parsePackageSpec(spec: string): PackageSpec {
 }
 
 function addDependency(manifest: Manifest, name: string, version: string, options: AddOptions): void {
-    // TODO: Implement
+    for (let i = 0; i < manifest.dependencies.length; i = i + 1) {
+        if (manifest.dependencies[i].name == name) {
+            manifest.dependencies[i].version = version;
+            manifest.dependencies[i].optional = options.optional;
+            manifest.dependencies[i].features = options.features;
+            return;
+        }
+    }
+
+    manifest.dependencies.push({
+        name: name,
+        version: version,
+        optional: options.optional,
+        features: options.features,
+        git: "",
+        branch: "",
+        path: ""
+    });
 }
 
 function addDevDependency(manifest: Manifest, name: string, version: string, options: AddOptions): void {
-    // TODO: Implement
-}
+    for (let i = 0; i < manifest.devDependencies.length; i = i + 1) {
+        if (manifest.devDependencies[i].name == name) {
+            manifest.devDependencies[i].version = version;
+            manifest.devDependencies[i].optional = options.optional;
+            manifest.devDependencies[i].features = options.features;
+            return;
+        }
+    }
 
-// ============================================================================
-// unroll remove
-// ============================================================================
+    manifest.devDependencies.push({
+        name: name,
+        version: version,
+        optional: options.optional,
+        features: options.features,
+        git: "",
+        branch: "",
+        path: ""
+    });
+}
 
 interface RemoveOptions {
     packages: string[];
@@ -158,13 +168,10 @@ function parseRemoveArgs(args: string[]): RemoveOptions {
         packages: []
     };
 
-    let i = 0;
-    while (i < args.length) {
-        let arg = args[i];
+    for (let arg of args) {
         if (arg[0] != "-") {
             options.packages.push(arg);
         }
-        i = i + 1;
     }
 
     return options;
@@ -179,23 +186,17 @@ function runRemove(args: string[]): number {
         return 1;
     }
 
-    // Load manifest
     let manifest = loadManifest("./unroll.toml");
     if (manifest == null) {
         console.error("Error: could not find unroll.toml");
         return 1;
     }
 
-    // Remove each package
-    let i = 0;
-    while (i < options.packages.length) {
-        let pkg = options.packages[i];
+    for (let pkg of options.packages) {
         console.log("Removing " + pkg + "...");
         removeDependency(manifest, pkg);
-        i = i + 1;
     }
 
-    // Re-resolve and save
     let resolved = resolveDependencies(manifest);
     saveManifest("./unroll.toml", manifest);
     writeLockfile("./unroll.lock", resolved.packages);
@@ -205,12 +206,22 @@ function runRemove(args: string[]): number {
 }
 
 function removeDependency(manifest: Manifest, name: string): void {
-    // TODO: Implement
-}
+    let newDeps: any[] = [];
+    for (let dep of manifest.dependencies) {
+        if (dep.name != name) {
+            newDeps.push(dep);
+        }
+    }
+    manifest.dependencies = newDeps;
 
-// ============================================================================
-// unroll update
-// ============================================================================
+    let newDevDeps: any[] = [];
+    for (let dep of manifest.devDependencies) {
+        if (dep.name != name) {
+            newDevDeps.push(dep);
+        }
+    }
+    manifest.devDependencies = newDevDeps;
+}
 
 interface UpdateOptions {
     packages: string[];
@@ -223,18 +234,14 @@ function parseUpdateArgs(args: string[]): UpdateOptions {
         all: false
     };
 
-    let i = 0;
-    while (i < args.length) {
-        let arg = args[i];
+    for (let arg of args) {
         if (arg == "--all") {
             options.all = true;
         } else if (arg[0] != "-") {
             options.packages.push(arg);
         }
-        i = i + 1;
     }
 
-    // If no packages specified, update all
     if (options.packages.length == 0) {
         options.all = true;
     }
@@ -245,7 +252,6 @@ function parseUpdateArgs(args: string[]): UpdateOptions {
 function runUpdate(args: string[]): number {
     let options = parseUpdateArgs(args);
 
-    // Load manifest
     let manifest = loadManifest("./unroll.toml");
     if (manifest == null) {
         console.error("Error: could not find unroll.toml");
@@ -258,14 +264,12 @@ function runUpdate(args: string[]): number {
         console.log("Updating: " + options.packages.join(", "));
     }
 
-    // Resolve with updates
     let resolved = resolveDependencies(manifest);
     if (resolved.error != "") {
         console.error("Error resolving dependencies: " + resolved.error);
         return 1;
     }
 
-    // Write new lockfile
     let result = writeLockfile("./unroll.lock", resolved.packages);
     if (!result.success) {
         console.error("Error writing lockfile: " + result.error);
