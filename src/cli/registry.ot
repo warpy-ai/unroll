@@ -27,8 +27,7 @@ function parseSearchArgs(args: string[]): SearchOptions {
         page: 1
     };
 
-    let i = 0;
-    while (i < args.length) {
+    for (let i = 0; i < args.length; i = i + 1) {
         let arg = args[i];
 
         if (arg == "--limit" || arg == "-l") {
@@ -44,8 +43,6 @@ function parseSearchArgs(args: string[]): SearchOptions {
         } else if (arg[0] != "-") {
             options.query = arg;
         }
-
-        i = i + 1;
     }
 
     return options;
@@ -82,9 +79,7 @@ function runSearch(args: string[]): number {
         return 0;
     }
 
-    let i = 0;
-    while (i < data.rolls.length) {
-        let pkg = data.rolls[i];
+    for (let pkg of data.rolls) {
         console.log(pkg.name + " (" + pkg.max_version + ")");
         if (pkg.description != null && pkg.description != "") {
             console.log("    " + pkg.description);
@@ -92,7 +87,6 @@ function runSearch(args: string[]): number {
         if (pkg.downloads != null && pkg.downloads > 0) {
             console.log("    Downloads: " + pkg.downloads);
         }
-        i = i + 1;
     }
 
     if (data.meta != null) {
@@ -117,8 +111,7 @@ function parseInfoArgs(args: string[]): InfoOptions {
         versions: false
     };
 
-    let i = 0;
-    while (i < args.length) {
+    for (let i = 0; i < args.length; i = i + 1) {
         let arg = args[i];
 
         if (arg == "--versions" || arg == "-v") {
@@ -137,8 +130,6 @@ function parseInfoArgs(args: string[]): InfoOptions {
                 options.package = arg;
             }
         }
-
-        i = i + 1;
     }
 
     return options;
@@ -199,20 +190,16 @@ function runInfo(args: string[]): number {
     if (info.owners != null && info.owners.length > 0) {
         console.log("");
         console.log("Owners:");
-        let i = 0;
-        while (i < info.owners.length) {
-            console.log("  - " + info.owners[i].username);
-            i = i + 1;
+        for (let owner of info.owners) {
+            console.log("  - " + owner.username);
         }
     }
 
     if (options.versions && info.versions != null && info.versions.length > 0) {
         console.log("");
         console.log("Versions (" + info.versions.length + "):");
-        let i = 0;
-        while (i < info.versions.length) {
-            console.log("  - " + info.versions[i]);
-            i = i + 1;
+        for (let ver of info.versions) {
+            console.log("  - " + ver);
         }
     }
 
@@ -232,15 +219,12 @@ function runInfo(args: string[]): number {
             }
             if (ver.dependencies != null && ver.dependencies.length > 0) {
                 console.log("  Dependencies:");
-                let j = 0;
-                while (j < ver.dependencies.length) {
-                    let dep = ver.dependencies[j];
+                for (let dep of ver.dependencies) {
                     let depStr = "    - " + dep.name + " " + dep.req;
                     if (dep.optional) {
                         depStr = depStr + " (optional)";
                     }
                     console.log(depStr);
-                    j = j + 1;
                 }
             }
         }
@@ -258,13 +242,10 @@ function parsePublishArgs(args: string[]): PublishOptions {
         dryRun: false
     };
 
-    let i = 0;
-    while (i < args.length) {
-        let arg = args[i];
+    for (let arg of args) {
         if (arg == "--dry-run" || arg == "-n") {
             options.dryRun = true;
         }
-        i = i + 1;
     }
 
     return options;
@@ -431,11 +412,8 @@ function createRollToml(manifest: any): string {
 
     if (manifest.dependencies && manifest.dependencies.length > 0) {
         toml = toml + "\n[dependencies]\n";
-        let i = 0;
-        while (i < manifest.dependencies.length) {
-            let dep = manifest.dependencies[i];
+        for (let dep of manifest.dependencies) {
             toml = toml + "\"" + dep.name + "\" = \"" + dep.version + "\"\n";
-            i = i + 1;
         }
     }
 
@@ -455,8 +433,7 @@ function parseYankArgs(args: string[]): YankOptions {
         undo: false
     };
 
-    let i = 0;
-    while (i < args.length) {
+    for (let i = 0; i < args.length; i = i + 1) {
         let arg = args[i];
 
         if (arg == "--undo") {
@@ -475,8 +452,6 @@ function parseYankArgs(args: string[]): YankOptions {
                 options.package = arg;
             }
         }
-
-        i = i + 1;
     }
 
     return options;
@@ -556,8 +531,7 @@ function runYank(args: string[]): number {
 
 function encodeURIComponent(s: string): string {
     let result = "";
-    let i = 0;
-    while (i < s.length) {
+    for (let i = 0; i < s.length; i = i + 1) {
         let c = s[i];
         if (c == "@") {
             result = result + "%40";
@@ -568,7 +542,6 @@ function encodeURIComponent(s: string): string {
         } else {
             result = result + c;
         }
-        i = i + 1;
     }
     return result;
 }
@@ -651,13 +624,11 @@ function readLine(): string {
 
 function parseInt(s: string): number {
     let result = 0;
-    let i = 0;
-    while (i < s.length) {
+    for (let i = 0; i < s.length; i = i + 1) {
         let c = s[i];
         if (c >= "0" && c <= "9") {
-            result = result * 10 + (c.charCodeAt(0) - "0".charCodeAt(0));
+            result = result * 10 + (c.charCodeAt(0) - 48);
         }
-        i = i + 1;
     }
     return result;
 }

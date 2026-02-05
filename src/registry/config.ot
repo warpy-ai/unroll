@@ -81,12 +81,10 @@ function parseConfig(content: string): RegistryConfig {
     };
 
     let lines = content.split("\n");
-    let i = 0;
-    while (i < lines.length) {
-        let line = lines[i].trim();
+    for (let line of lines) {
+        line = line.trim();
 
         if (line == "" || line[0] == "#") {
-            i = i + 1;
             continue;
         }
 
@@ -110,8 +108,6 @@ function parseConfig(content: string): RegistryConfig {
                 }
             }
         }
-
-        i = i + 1;
     }
 
     return config;
@@ -119,9 +115,8 @@ function parseConfig(content: string): RegistryConfig {
 
 function parseCredentials(content: string, registry: string): string {
     let lines = content.split("\n");
-    let i = 0;
-    while (i < lines.length) {
-        let line = lines[i].trim();
+    for (let line of lines) {
+        line = line.trim();
 
         let eqIndex = line.indexOf("=");
         if (eqIndex > 0) {
@@ -136,8 +131,6 @@ function parseCredentials(content: string, registry: string): string {
                 return token;
             }
         }
-
-        i = i + 1;
     }
 
     return "";

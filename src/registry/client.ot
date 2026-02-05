@@ -329,19 +329,19 @@ function parseFloat(s: string): number {
     let decimal = false;
     let decimalPlace = 0.1;
     let negative = false;
-    let i = 0;
+    let start = 0;
 
     if (s.length > 0 && s[0] == '-') {
         negative = true;
-        i = 1;
+        start = 1;
     }
 
-    while (i < s.length) {
+    for (let i = start; i < s.length; i = i + 1) {
         let ch = s[i];
         if (ch == '.') {
             decimal = true;
         } else if (ch >= '0' && ch <= '9') {
-            let digit = ch.charCodeAt(0) - '0'.charCodeAt(0);
+            let digit = ch.charCodeAt(0) - 48;
             if (decimal) {
                 result = result + digit * decimalPlace;
                 decimalPlace = decimalPlace * 0.1;
@@ -349,7 +349,6 @@ function parseFloat(s: string): number {
                 result = result * 10 + digit;
             }
         }
-        i = i + 1;
     }
 
     if (negative) {
@@ -360,8 +359,7 @@ function parseFloat(s: string): number {
 
 function encodePackageName(name: string): string {
     let encoded = "";
-    let i = 0;
-    while (i < name.length) {
+    for (let i = 0; i < name.length; i = i + 1) {
         let c = name[i];
         if (c == "@") {
             encoded = encoded + "%40";
@@ -370,33 +368,30 @@ function encodePackageName(name: string): string {
         } else {
             encoded = encoded + c;
         }
-        i = i + 1;
     }
     return encoded;
 }
 
 function encodeURIComponent(str: string): string {
     let result = "";
-    let i = 0;
-    while (i < str.length) {
+    for (let i = 0; i < str.length; i = i + 1) {
         let c = str[i];
-        let code = c.charCodeAt(0);
 
         // Safe characters: A-Z a-z 0-9 - _ . ~
-        if ((code >= 65 && code <= 90) ||   // A-Z
-            (code >= 97 && code <= 122) ||  // a-z
-            (code >= 48 && code <= 57) ||   // 0-9
+        if ((c >= "A" && c <= "Z") ||
+            (c >= "a" && c <= "z") ||
+            (c >= "0" && c <= "9") ||
             c == '-' || c == '_' || c == '.' || c == '~') {
             result = result + c;
         } else {
             // Encode as %XX
+            let code = c.charCodeAt(0);
             let hex = code.toString(16).toUpperCase();
             if (hex.length == 1) {
                 hex = "0" + hex;
             }
             result = result + "%" + hex;
         }
-        i = i + 1;
     }
     return result;
 }
@@ -549,14 +544,11 @@ function fetchPackageVersions(name: string): VersionsResult {
     let versions: PackageVersion[] = [];
 
     // Fetch details for each version
-    let i = 0;
-    while (i < info.versions.length) {
-        let ver = info.versions[i];
+    for (let ver of info.versions) {
         let verResult = getPackageVersion(name, ver);
         if (verResult.error == "" && verResult.data != null) {
             versions.push(verResult.data as PackageVersion);
         }
-        i = i + 1;
     }
 
     // Sort versions (newest first) - simple string comparison
@@ -568,18 +560,14 @@ function fetchPackageVersions(name: string): VersionsResult {
 
 function sortVersions(versions: PackageVersion[]): PackageVersion[] {
     // Simple bubble sort by version string (descending)
-    let i = 0;
-    while (i < versions.length) {
-        let j = i + 1;
-        while (j < versions.length) {
+    for (let i = 0; i < versions.length; i = i + 1) {
+        for (let j = i + 1; j < versions.length; j = j + 1) {
             if (compareVersions(versions[j].version, versions[i].version) > 0) {
                 let temp = versions[i];
                 versions[i] = versions[j];
                 versions[j] = temp;
             }
-            j = j + 1;
         }
-        i = i + 1;
     }
     return versions;
 }
@@ -589,8 +577,7 @@ function compareVersions(a: string, b: string): number {
     let aParts = a.split(".");
     let bParts = b.split(".");
 
-    let i = 0;
-    while (i < 3) {
+    for (let i = 0; i < 3; i = i + 1) {
         let aNum = 0;
         let bNum = 0;
 
@@ -603,8 +590,6 @@ function compareVersions(a: string, b: string): number {
 
         if (aNum > bNum) return 1;
         if (aNum < bNum) return -1;
-
-        i = i + 1;
     }
 
     return 0;
@@ -612,15 +597,13 @@ function compareVersions(a: string, b: string): number {
 
 function parseVersionPart(s: string): number {
     let result = 0;
-    let i = 0;
-    while (i < s.length) {
+    for (let i = 0; i < s.length; i = i + 1) {
         let c = s[i];
         if (c >= "0" && c <= "9") {
-            result = result * 10 + (c.charCodeAt(0) - "0".charCodeAt(0));
+            result = result * 10 + (c.charCodeAt(0) - 48);
         } else {
             break; // Stop at first non-digit (e.g., "1-beta")
         }
-        i = i + 1;
     }
     return result;
 }

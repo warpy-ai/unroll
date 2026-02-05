@@ -109,5 +109,7 @@ function main(args: string[]): number {
     return 1;
 }
 
-// Export for use as library
 export { main, VERSION };
+
+let exitCode = main(process.argv);
+process.exit(exitCode);

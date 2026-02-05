@@ -17,8 +17,7 @@ function parseAddArgs(args: string[]): AddOptions {
         features: []
     };
 
-    let i = 0;
-    while (i < args.length) {
+    for (let i = 0; i < args.length; i = i + 1) {
         let arg = args[i];
 
         if (arg == "--dev" || arg == "-D") {
@@ -33,8 +32,6 @@ function parseAddArgs(args: string[]): AddOptions {
         } else if (arg[0] != "-") {
             options.packages.push(arg);
         }
-
-        i = i + 1;
     }
 
     return options;
@@ -56,9 +53,7 @@ function runAdd(args: string[]): number {
         return 1;
     }
 
-    let i = 0;
-    while (i < options.packages.length) {
-        let pkg = options.packages[i];
+    for (let pkg of options.packages) {
         let parsed = parsePackageSpec(pkg);
 
         console.log("Adding " + parsed.name + "@" + parsed.version + "...");
@@ -68,8 +63,6 @@ function runAdd(args: string[]): number {
         } else {
             addDependency(manifest, parsed.name, parsed.version, options);
         }
-
-        i = i + 1;
     }
 
     console.log("Resolving dependencies...");
@@ -125,15 +118,13 @@ function parsePackageSpec(spec: string): PackageSpec {
 }
 
 function addDependency(manifest: Manifest, name: string, version: string, options: AddOptions): void {
-    let i = 0;
-    while (i < manifest.dependencies.length) {
+    for (let i = 0; i < manifest.dependencies.length; i = i + 1) {
         if (manifest.dependencies[i].name == name) {
             manifest.dependencies[i].version = version;
             manifest.dependencies[i].optional = options.optional;
             manifest.dependencies[i].features = options.features;
             return;
         }
-        i = i + 1;
     }
 
     manifest.dependencies.push({
@@ -148,15 +139,13 @@ function addDependency(manifest: Manifest, name: string, version: string, option
 }
 
 function addDevDependency(manifest: Manifest, name: string, version: string, options: AddOptions): void {
-    let i = 0;
-    while (i < manifest.devDependencies.length) {
+    for (let i = 0; i < manifest.devDependencies.length; i = i + 1) {
         if (manifest.devDependencies[i].name == name) {
             manifest.devDependencies[i].version = version;
             manifest.devDependencies[i].optional = options.optional;
             manifest.devDependencies[i].features = options.features;
             return;
         }
-        i = i + 1;
     }
 
     manifest.devDependencies.push({
@@ -179,13 +168,10 @@ function parseRemoveArgs(args: string[]): RemoveOptions {
         packages: []
     };
 
-    let i = 0;
-    while (i < args.length) {
-        let arg = args[i];
+    for (let arg of args) {
         if (arg[0] != "-") {
             options.packages.push(arg);
         }
-        i = i + 1;
     }
 
     return options;
@@ -206,12 +192,9 @@ function runRemove(args: string[]): number {
         return 1;
     }
 
-    let i = 0;
-    while (i < options.packages.length) {
-        let pkg = options.packages[i];
+    for (let pkg of options.packages) {
         console.log("Removing " + pkg + "...");
         removeDependency(manifest, pkg);
-        i = i + 1;
     }
 
     let resolved = resolveDependencies(manifest);
@@ -224,22 +207,18 @@ function runRemove(args: string[]): number {
 
 function removeDependency(manifest: Manifest, name: string): void {
     let newDeps: any[] = [];
-    let i = 0;
-    while (i < manifest.dependencies.length) {
-        if (manifest.dependencies[i].name != name) {
-            newDeps.push(manifest.dependencies[i]);
+    for (let dep of manifest.dependencies) {
+        if (dep.name != name) {
+            newDeps.push(dep);
         }
-        i = i + 1;
     }
     manifest.dependencies = newDeps;
 
     let newDevDeps: any[] = [];
-    i = 0;
-    while (i < manifest.devDependencies.length) {
-        if (manifest.devDependencies[i].name != name) {
-            newDevDeps.push(manifest.devDependencies[i]);
+    for (let dep of manifest.devDependencies) {
+        if (dep.name != name) {
+            newDevDeps.push(dep);
         }
-        i = i + 1;
     }
     manifest.devDependencies = newDevDeps;
 }
@@ -255,15 +234,12 @@ function parseUpdateArgs(args: string[]): UpdateOptions {
         all: false
     };
 
-    let i = 0;
-    while (i < args.length) {
-        let arg = args[i];
+    for (let arg of args) {
         if (arg == "--all") {
             options.all = true;
         } else if (arg[0] != "-") {
             options.packages.push(arg);
         }
-        i = i + 1;
     }
 
     if (options.packages.length == 0) {

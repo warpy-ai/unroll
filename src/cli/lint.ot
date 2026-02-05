@@ -15,8 +15,7 @@ function parseLintArgs(args: string[]): LintOptions {
         rules: []
     };
 
-    let i = 0;
-    while (i < args.length) {
+    for (let i = 0; i < args.length; i = i + 1) {
         let arg = args[i];
 
         if (arg == "--fix") {
@@ -31,8 +30,6 @@ function parseLintArgs(args: string[]): LintOptions {
         } else if (arg[0] != "-") {
             options.files.push(arg);
         }
-
-        i = i + 1;
     }
 
     return options;
@@ -58,15 +55,10 @@ function runLint(args: string[]): number {
     let totalErrors = 0;
     let fixedCount = 0;
 
-    let i = 0;
-    while (i < files.length) {
-        let file = files[i];
+    for (let file of files) {
         let diagnostics = lintFile(file, options.rules);
 
-        let j = 0;
-        while (j < diagnostics.length) {
-            let diag = diagnostics[j];
-
+        for (let diag of diagnostics) {
             if (diag.severity == "error") {
                 totalErrors = totalErrors + 1;
             } else {
@@ -77,17 +69,12 @@ function runLint(args: string[]): number {
                 let fixed = applyFix(file, diag.fix);
                 if (fixed) {
                     fixedCount = fixedCount + 1;
-                    j = j + 1;
                     continue;
                 }
             }
 
             printDiagnostic(file, diag);
-
-            j = j + 1;
         }
-
-        i = i + 1;
     }
 
     console.log("");
@@ -167,8 +154,7 @@ function checkLineLength(content: string): Diagnostic[] {
     let lines = content.split("\n");
     let maxLength = 100;
 
-    let i = 0;
-    while (i < lines.length) {
+    for (let i = 0; i < lines.length; i = i + 1) {
         if (lines[i].length > maxLength) {
             diagnostics.push({
                 severity: "warning",
@@ -179,7 +165,6 @@ function checkLineLength(content: string): Diagnostic[] {
                 fix: null
             });
         }
-        i = i + 1;
     }
 
     return diagnostics;
@@ -207,9 +192,7 @@ function discoverSourceFilesRecursive(dir: string, files: string[]): void {
     }
 
     let entries = fs.readdirSync(dir);
-    let i = 0;
-    while (i < entries.length) {
-        let entry = entries[i];
+    for (let entry of entries) {
         let fullPath = dir + "/" + entry;
 
         let stats = fs.statSync(fullPath);
@@ -218,8 +201,6 @@ function discoverSourceFilesRecursive(dir: string, files: string[]): void {
         } else if (entry.indexOf(".ot") == entry.length - 3) {
             files.push(fullPath);
         }
-
-        i = i + 1;
     }
 }
 

@@ -49,11 +49,13 @@ interface Profile {
 }
 
 function loadManifest(path: string): Manifest | null {
-    let content = readFile(path);
+    if (!fs.existsSync(path)) {
+        return null;
+    }
+    let content = fs.readFileSync(path);
     if (content == null) {
         return null;
     }
-
     return parseToml(content);
 }
 
@@ -123,13 +125,11 @@ function parseToml(content: string): Manifest {
     let lines = content.split("\n");
     let currentSection = "";
 
-    let i = 0;
-    while (i < lines.length) {
-        let line = lines[i].trim();
+    for (let line of lines) {
+        line = line.trim();
 
         // Skip empty lines and comments
         if (line == "" || line[0] == "#") {
-            i = i + 1;
             continue;
         }
 
@@ -139,7 +139,6 @@ function parseToml(content: string): Manifest {
             if (end > 0) {
                 currentSection = line.substring(1, end);
             }
-            i = i + 1;
             continue;
         }
 
@@ -173,8 +172,6 @@ function parseToml(content: string): Manifest {
                 else if (key == "lto") manifest.build.lto = value == "true";
             }
         }
-
-        i = i + 1;
     }
 
     return manifest;
@@ -217,19 +214,13 @@ function serializeToml(manifest: Manifest): string {
     }
 
     output = output + "\n[dependencies]\n";
-    let i = 0;
-    while (i < manifest.dependencies.length) {
-        let dep = manifest.dependencies[i];
+    for (let dep of manifest.dependencies) {
         output = output + "\"" + dep.name + "\" = \"" + dep.version + "\"\n";
-        i = i + 1;
     }
 
     output = output + "\n[dev-dependencies]\n";
-    i = 0;
-    while (i < manifest.devDependencies.length) {
-        let dep = manifest.devDependencies[i];
+    for (let dep of manifest.devDependencies) {
         output = output + "\"" + dep.name + "\" = \"" + dep.version + "\"\n";
-        i = i + 1;
     }
 
     return output;
@@ -241,11 +232,10 @@ interface Result {
 }
 
 function readFile(path: string): string | null {
-    try {
-        return fs.readFileSync(path);
-    } catch (e) {
+    if (!fs.existsSync(path)) {
         return null;
     }
+    return fs.readFileSync(path);
 }
 
 function writeFile(path: string, content: string): Result {

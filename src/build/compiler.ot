@@ -40,9 +40,7 @@ function compileSources(manifest: Manifest, lockfile: Lockfile | null, options: 
 
     let flags = getCompilerFlags(options.profile, options.target);
 
-    let i = 0;
-    while (i < sources.length) {
-        let source = sources[i];
+    for (let source of sources) {
         let outputPath = getObjectPath(source, outputDir);
 
         if (options.verbose) {
@@ -58,13 +56,9 @@ function compileSources(manifest: Manifest, lockfile: Lockfile | null, options: 
 
         result.objects.push(outputPath);
 
-        let j = 0;
-        while (j < compileResult.warnings.length) {
-            result.warnings.push(compileResult.warnings[j]);
-            j = j + 1;
+        for (let warning of compileResult.warnings) {
+            result.warnings.push(warning);
         }
-
-        i = i + 1;
     }
 
     if (lockfile != null) {
@@ -74,10 +68,8 @@ function compileSources(manifest: Manifest, lockfile: Lockfile | null, options: 
             return result;
         }
 
-        let k = 0;
-        while (k < depResult.objects.length) {
-            result.objects.push(depResult.objects[k]);
-            k = k + 1;
+        for (let obj of depResult.objects) {
+            result.objects.push(obj);
         }
     }
 
@@ -125,9 +117,7 @@ function discoverSourcesRecursive(dir: string, sources: string[]): void {
     }
 
     let entries = fs.readdirSync(dir);
-    let i = 0;
-    while (i < entries.length) {
-        let entry = entries[i];
+    for (let entry of entries) {
         let fullPath = dir + "/" + entry;
 
         let stats = fs.statSync(fullPath);
@@ -136,8 +126,6 @@ function discoverSourcesRecursive(dir: string, sources: string[]): void {
         } else if (entry.indexOf(".ot") == entry.length - 3) {
             sources.push(fullPath);
         }
-
-        i = i + 1;
     }
 }
 
@@ -242,9 +230,7 @@ function findOitec(): string {
         process.env.get("HOME") + "/.oite/bin/oitec"
     ];
 
-    let i = 0;
-    while (i < locations.length) {
-        let loc = locations[i];
+    for (let loc of locations) {
         let result = process.exec("which", [loc]);
         if (result.exitCode == 0) {
             return result.stdout.trim();
@@ -253,7 +239,6 @@ function findOitec(): string {
         if (testResult.exitCode == 0 || testResult.stdout != "" || testResult.stderr.indexOf("not found") == -1) {
             return loc;
         }
-        i = i + 1;
     }
 
     return "";

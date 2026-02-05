@@ -22,8 +22,7 @@ function parseBuildArgs(args: string[]): BuildOptions {
         noStd: false
     };
 
-    let i = 0;
-    while (i < args.length) {
+    for (let i = 0; i < args.length; i = i + 1) {
         let arg = args[i];
 
         if (arg == "--release" || arg == "-r") {
@@ -46,8 +45,6 @@ function parseBuildArgs(args: string[]): BuildOptions {
         } else if (arg == "--no-std") {
             options.noStd = true;
         }
-
-        i = i + 1;
     }
 
     return options;
@@ -113,8 +110,7 @@ function parseRunArgs(args: string[]): RunOptions {
     };
 
     let foundSeparator = false;
-    let i = 0;
-    while (i < args.length) {
+    for (let i = 0; i < args.length; i = i + 1) {
         let arg = args[i];
 
         if (arg == "--") {
@@ -124,8 +120,6 @@ function parseRunArgs(args: string[]): RunOptions {
         } else if (arg == "--release" || arg == "-r") {
             options.release = true;
         }
-
-        i = i + 1;
     }
 
     return options;
@@ -184,8 +178,7 @@ function parseWatchArgs(args: string[]): WatchOptions {
         run: false
     };
 
-    let i = 0;
-    while (i < args.length) {
+    for (let i = 0; i < args.length; i = i + 1) {
         let arg = args[i];
 
         if (arg == "--release" || arg == "-r") {
@@ -193,8 +186,6 @@ function parseWatchArgs(args: string[]): WatchOptions {
         } else if (arg == "--run") {
             options.run = true;
         }
-
-        i = i + 1;
     }
 
     return options;
@@ -268,13 +259,11 @@ function removeDirectory(path: string): Result {
 
 function parseInt(s: string): number {
     let result = 0;
-    let i = 0;
-    while (i < s.length) {
+    for (let i = 0; i < s.length; i = i + 1) {
         let c = s[i];
         if (c >= "0" && c <= "9") {
-            result = result * 10 + (c.charCodeAt(0) - "0".charCodeAt(0));
+            result = result * 10 + (c.charCodeAt(0) - 48);
         }
-        i = i + 1;
     }
     return result;
 }

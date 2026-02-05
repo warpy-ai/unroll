@@ -1,0 +1,11 @@
+console.log("Test: simple addition");
+
+let result = 2 + 2;
+if (result == 4) {
+    console.log("PASS: 2 + 2 = 4");
+} else {
+    console.log("FAIL: 2 + 2 != 4");
+    process.exit(1);
+}
+
+console.log("All tests passed!");

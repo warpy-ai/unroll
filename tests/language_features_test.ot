@@ -1,0 +1,249 @@
+// Test: Oite language features that were previously buggy or missing
+// Each section tests a specific fix made to oitec
+
+let passed = 0;
+let failed = 0;
+
+function assert(condition: boolean, name: string): void {
+    if (condition) {
+        console.log("  PASS: " + name);
+        passed = passed + 1;
+    } else {
+        console.log("  FAIL: " + name);
+        failed = failed + 1;
+    }
+}
+
+// ============================================================
+// 1. String comparison operators (>=, <=, >, <)
+// Previously: always returned false, had to use charCodeAt()
+// ============================================================
+console.log("");
+console.log("=== String Comparison Operators ===");
+
+assert("b" > "a", "\"b\" > \"a\"");
+assert("a" < "b", "\"a\" < \"b\"");
+assert("a" >= "a", "\"a\" >= \"a\"");
+assert("b" >= "a", "\"b\" >= \"a\"");
+assert("a" <= "a", "\"a\" <= \"a\"");
+assert("a" <= "b", "\"a\" <= \"b\"");
+assert(!("a" > "b"), "!(\"a\" > \"b\")");
+assert(!("b" < "a"), "!(\"b\" < \"a\")");
+
+// Character range checks (the primary use case)
+let testChar = "m";
+assert(testChar >= "a" && testChar <= "z", "lowercase letter range check");
+
+let upperChar = "M";
+assert(upperChar >= "A" && upperChar <= "Z", "uppercase letter range check");
+
+let digitChar = "5";
+assert(digitChar >= "0" && digitChar <= "9", "digit range check");
+
+// isLetter without charCodeAt workaround
+function isLetterNew(c: string): boolean {
+    return (c >= "a" && c <= "z") || (c >= "A" && c <= "Z");
+}
+
+assert(isLetterNew("a"), "isLetter('a') with string comparison");
+assert(isLetterNew("Z"), "isLetter('Z') with string comparison");
+assert(!isLetterNew("5"), "!isLetter('5') with string comparison");
+assert(!isLetterNew("-"), "!isLetter('-') with string comparison");
+
+// isDigit without charCodeAt workaround
+function isDigitNew(c: string): boolean {
+    return c >= "0" && c <= "9";
+}
+
+assert(isDigitNew("0"), "isDigit('0') with string comparison");
+assert(isDigitNew("9"), "isDigit('9') with string comparison");
+assert(!isDigitNew("a"), "!isDigit('a') with string comparison");
+
+// ============================================================
+// 2. For loops
+// Previously: had to use while with manual counter
+// ============================================================
+console.log("");
+console.log("=== For Loops ===");
+
+// Basic for loop
+let sum = 0;
+for (let i = 0; i < 5; i = i + 1) {
+    sum = sum + i;
+}
+assert(sum == 10, "basic for loop sum 0..4 = 10");
+
+// For loop with array indexing
+let arr = ["a", "b", "c", "d"];
+let concat = "";
+for (let i = 0; i < arr.length; i = i + 1) {
+    concat = concat + arr[i];
+}
+assert(concat == "abcd", "for loop over array by index");
+
+// Nested for loops
+let matrix = 0;
+for (let i = 0; i < 3; i = i + 1) {
+    for (let j = 0; j < 3; j = j + 1) {
+        matrix = matrix + 1;
+    }
+}
+assert(matrix == 9, "nested for loops 3x3 = 9");
+
+// For loop with break (if supported)
+let breakSum = 0;
+for (let i = 0; i < 10; i = i + 1) {
+    if (i == 5) {
+        break;
+    }
+    breakSum = breakSum + i;
+}
+assert(breakSum == 10, "for loop with break at 5");
+
+// ============================================================
+// 3. For...of loops
+// Previously: not available, had to use while + index
+// ============================================================
+console.log("");
+console.log("=== For...of Loops ===");
+
+let items = ["hello", "world", "oite"];
+let joined = "";
+for (let item of items) {
+    joined = joined + item + " ";
+}
+assert(joined == "hello world oite ", "for...of over string array");
+
+let numbers = [10, 20, 30, 40];
+let total = 0;
+for (let n of numbers) {
+    total = total + n;
+}
+assert(total == 100, "for...of over number array sum = 100");
+
+// Nested for...of
+let words = ["ab", "cd"];
+let chars = "";
+for (let word of words) {
+    for (let i = 0; i < word.length; i = i + 1) {
+        chars = chars + word[i];
+    }
+}
+assert(chars == "abcd", "nested for...of with for");
+
+// ============================================================
+// 4. Arrow functions
+// Previously: not available, had to use function declarations
+// ============================================================
+console.log("");
+console.log("=== Arrow Functions ===");
+
+let add = (a: number, b: number) => a + b;
+assert(add(3, 4) == 7, "arrow function add(3,4) = 7");
+
+let greet = (name: string) => "Hello " + name;
+assert(greet("Oite") == "Hello Oite", "arrow function greet");
+
+let isEven = (n: number) => n % 2 == 0;
+assert(isEven(4), "arrow function isEven(4)");
+assert(!isEven(3), "arrow function !isEven(3)");
+
+// Arrow with no params
+let getFortyTwo = () => 42;
+assert(getFortyTwo() == 42, "arrow function no params");
+
+// ============================================================
+// 5. Module helper functions (calling functions that use fs)
+// Previously: returned undefined or function object
+// ============================================================
+console.log("");
+console.log("=== Module Helper Functions ===");
+
+function helperExists(path: string): boolean {
+    return fs.existsSync(path);
+}
+
+function helperRead(path: string): string | null {
+    if (!helperExists(path)) {
+        return null;
+    }
+    return fs.readFileSync(path);
+}
+
+// Test calling helper that calls another helper that uses fs
+let thisFileExists = helperExists("./tests/language_features_test.ot");
+assert(thisFileExists, "helper function wrapping fs.existsSync works");
+
+let fakeFileExists = helperExists("./nonexistent_file_12345.ot");
+assert(!fakeFileExists, "helper function returns false for missing file");
+
+let content = helperRead("./tests/language_features_test.ot");
+assert(content != null, "helper function wrapping fs.readFileSync works");
+
+let nullContent = helperRead("./nonexistent_file_12345.ot");
+assert(nullContent == null, "helper function returns null for missing file");
+
+// Helper function that writes and reads back
+function helperWriteAndRead(path: string, data: string): string | null {
+    fs.writeFileSync(path, data);
+    return fs.readFileSync(path);
+}
+
+let testPath = "./target/test_helper_output.txt";
+if (!fs.existsSync("./target")) {
+    fs.mkdirSync("./target", true);
+}
+let readBack = helperWriteAndRead(testPath, "hello from helper");
+assert(readBack == "hello from helper", "helper write+read roundtrip works");
+
+// ============================================================
+// 6. Try-catch blocks
+// Previously: caused function returns to misbehave
+// ============================================================
+console.log("");
+console.log("=== Try-Catch Blocks ===");
+
+function safeDivide(a: number, b: number): number {
+    try {
+        if (b == 0) {
+            throw "Division by zero";
+        }
+        return a / b;
+    } catch (e) {
+        return -1;
+    }
+}
+
+assert(safeDivide(10, 2) == 5, "try-catch: normal return from try");
+assert(safeDivide(10, 0) == -1, "try-catch: return from catch");
+
+function safeReadFile(path: string): string {
+    try {
+        let content = fs.readFileSync(path);
+        if (content == null) {
+            return "FILE_NOT_FOUND";
+        }
+        return content;
+    } catch (e) {
+        return "ERROR";
+    }
+}
+
+let safeResult = safeReadFile("./tests/simple_test.ot");
+assert(safeResult != "ERROR" && safeResult != "FILE_NOT_FOUND", "try-catch with fs: successful read");
+
+// ============================================================
+// Results
+// ============================================================
+console.log("");
+console.log("=== Results ===");
+console.log("Passed: " + passed);
+console.log("Failed: " + failed);
+console.log("");
+
+if (failed > 0) {
+    console.log("SOME TESTS FAILED");
+    process.exit(1);
+} else {
+    console.log("ALL TESTS PASSED");
+}

@@ -1,0 +1,6 @@
+[package]
+name = "unroll"
+version = "0.1.0"
+description = "Package manager and build system for Oite"
+
+[dependencies]

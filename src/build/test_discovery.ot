@@ -22,9 +22,7 @@ function discoverTestsRecursive(dir: string, filter: string, tests: TestFile[]):
     }
 
     let entries = fs.readdirSync(dir);
-    let i = 0;
-    while (i < entries.length) {
-        let entry = entries[i];
+    for (let entry of entries) {
         let fullPath = dir + "/" + entry;
 
         let stats = fs.statSync(fullPath);
@@ -36,8 +34,6 @@ function discoverTestsRecursive(dir: string, filter: string, tests: TestFile[]):
                 tests.push({ name: name, path: fullPath });
             }
         }
-
-        i = i + 1;
     }
 }
 
@@ -47,9 +43,7 @@ function discoverTestsInSrc(dir: string, filter: string, tests: TestFile[]): voi
     }
 
     let entries = fs.readdirSync(dir);
-    let i = 0;
-    while (i < entries.length) {
-        let entry = entries[i];
+    for (let entry of entries) {
         let fullPath = dir + "/" + entry;
 
         let stats = fs.statSync(fullPath);
@@ -61,8 +55,6 @@ function discoverTestsInSrc(dir: string, filter: string, tests: TestFile[]): voi
                 tests.push({ name: name, path: fullPath });
             }
         }
-
-        i = i + 1;
     }
 }
 
@@ -115,18 +107,14 @@ function matchesFilter(name: string, filter: string): boolean {
 
 function sortTests(tests: TestFile[]): TestFile[] {
     // Simple bubble sort by name
-    let i = 0;
-    while (i < tests.length) {
-        let j = i + 1;
-        while (j < tests.length) {
+    for (let i = 0; i < tests.length; i = i + 1) {
+        for (let j = i + 1; j < tests.length; j = j + 1) {
             if (tests[j].name < tests[i].name) {
                 let temp = tests[i];
                 tests[i] = tests[j];
                 tests[j] = temp;
             }
-            j = j + 1;
         }
-        i = i + 1;
     }
     return tests;
 }

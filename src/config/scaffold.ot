@@ -6,43 +6,32 @@ interface ScaffoldResult {
 }
 
 function createDirectoryStructure(path: string, isLib: boolean): ScaffoldResult {
-    // Create root directory
-    let result = createDirectory(path);
-    if (!result.success) {
-        return result;
+    if (!fs.existsSync(path)) {
+        fs.mkdirSync(path, true);
     }
 
-    // Create src directory
-    result = createDirectory(path + "/src");
-    if (!result.success) {
-        return result;
+    let srcPath = path + "/src";
+    if (!fs.existsSync(srcPath)) {
+        fs.mkdirSync(srcPath, true);
     }
 
-    // Create tests directory
-    result = createDirectory(path + "/tests");
-    if (!result.success) {
-        return result;
+    let testsPath = path + "/tests";
+    if (!fs.existsSync(testsPath)) {
+        fs.mkdirSync(testsPath, true);
     }
 
-    // Create examples directory
-    result = createDirectory(path + "/examples");
-    if (!result.success) {
-        return result;
+    let examplesPath = path + "/examples";
+    if (!fs.existsSync(examplesPath)) {
+        fs.mkdirSync(examplesPath, true);
     }
 
-    // Create main source file
     let mainFile = isLib ? "/src/lib.ot" : "/src/main.ot";
     let mainContent = isLib ? getLibTemplate() : getMainTemplate();
-    result = writeFile(path + mainFile, mainContent);
-    if (!result.success) {
-        return result;
-    }
+    let mainPath = path + mainFile;
+    fs.writeFileSync(mainPath, mainContent);
 
-    // Create .gitignore
-    result = writeFile(path + "/.gitignore", getGitignore());
-    if (!result.success) {
-        return result;
-    }
+    let gitignorePath = path + "/.gitignore";
+    fs.writeFileSync(gitignorePath, getGitignore());
 
     return { success: true, error: "" };
 }
@@ -94,12 +83,15 @@ Thumbs.db
 }
 
 function createDirectory(path: string): ScaffoldResult {
-    // TODO: Implement directory creation
+    if (fs.existsSync(path)) {
+        return { success: true, error: "" };
+    }
+    fs.mkdirSync(path, true);
     return { success: true, error: "" };
 }
 
 function writeFile(path: string, content: string): ScaffoldResult {
-    // TODO: Implement file writing
+    fs.writeFileSync(path, content);
     return { success: true, error: "" };
 }
 

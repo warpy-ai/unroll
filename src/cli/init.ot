@@ -13,8 +13,7 @@ function parseInitArgs(args: string[]): InitOptions {
         lib: false
     };
 
-    let i = 0;
-    while (i < args.length) {
+    for (let i = 0; i < args.length; i = i + 1) {
         let arg = args[i];
 
         if (arg == "--lib") {
@@ -25,8 +24,6 @@ function parseInitArgs(args: string[]): InitOptions {
                 options.name = args[i];
             }
         }
-
-        i = i + 1;
     }
 
     return options;
@@ -52,30 +49,18 @@ function runInit(args: string[]): number {
 
     // Create unroll.toml
     let manifest = createManifest(projectName, options.lib);
-    let result = writeFile("./unroll.toml", manifest);
-    if (!result.success) {
-        console.error("Error writing manifest: " + result.error);
-        return 1;
-    }
+    fs.writeFileSync("./unroll.toml", manifest);
 
     // Create src directory if it doesn't exist
-    if (!directoryExists("./src")) {
-        result = createDirectory("./src");
-        if (!result.success) {
-            console.error("Error creating src directory: " + result.error);
-            return 1;
-        }
+    if (!fs.existsSync("./src")) {
+        fs.mkdirSync("./src", true);
     }
 
     // Create main file if it doesn't exist
     let mainFile = options.lib ? "./src/lib.ot" : "./src/main.ot";
-    if (!fileExists(mainFile)) {
+    if (!fs.existsSync(mainFile)) {
         let content = options.lib ? getLibTemplate(projectName) : getMainTemplate();
-        result = writeFile(mainFile, content);
-        if (!result.success) {
-            console.error("Error creating source file: " + result.error);
-            return 1;
-        }
+        fs.writeFileSync(mainFile, content);
     }
 
     console.log("");
@@ -91,13 +76,17 @@ function runInit(args: string[]): number {
 }
 
 function manifestExists(path: string): boolean {
-    // TODO: Implement file existence check
-    return false;
+    let manifestPath = path + "/unroll.toml";
+    return fs.existsSync(manifestPath);
 }
 
 function getCurrentDirectoryName(): string {
-    // TODO: Implement
-    return "my-project";
+    let cwd = process.cwd();
+    let lastSlash = cwd.lastIndexOf("/");
+    if (lastSlash >= 0) {
+        return cwd.substring(lastSlash + 1);
+    }
+    return cwd;
 }
 
 interface Result {
@@ -106,23 +95,23 @@ interface Result {
 }
 
 function writeFile(path: string, content: string): Result {
-    // TODO: Implement file writing
+    fs.writeFileSync(path, content);
     return { success: true, error: "" };
 }
 
 function directoryExists(path: string): boolean {
-    // TODO: Implement
-    return false;
+    return fs.existsSync(path);
 }
 
 function createDirectory(path: string): Result {
-    // TODO: Implement
+    if (!fs.existsSync(path)) {
+        fs.mkdirSync(path, true);
+    }
     return { success: true, error: "" };
 }
 
 function fileExists(path: string): boolean {
-    // TODO: Implement
-    return false;
+    return fs.existsSync(path);
 }
 
 function getMainTemplate(): string {

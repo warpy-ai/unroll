@@ -13,10 +13,7 @@ function parseDocArgs(args: string[]): DocOptions {
         noDeps: false
     };
 
-    let i = 0;
-    while (i < args.length) {
-        let arg = args[i];
-
+    for (let arg of args) {
         if (arg == "--open") {
             options.open = true;
         } else if (arg == "--document-private-items") {
@@ -24,8 +21,6 @@ function parseDocArgs(args: string[]): DocOptions {
         } else if (arg == "--no-deps") {
             options.noDeps = true;
         }
-
-        i = i + 1;
     }
 
     return options;
@@ -76,16 +71,13 @@ function generateDocs(files: string[], outputDir: string, options: DocOptions): 
     let indexContent = generateIndexPage(files);
     writeFile(outputDir + "/index.html", indexContent);
 
-    let i = 0;
-    while (i < files.length) {
-        let file = files[i];
+    for (let file of files) {
         let content = readFile(file);
         if (content != null) {
             let docContent = generateFileDocs(file, content, options.private);
             let outputPath = outputDir + "/" + fileToHtmlPath(file);
             writeFile(outputPath, docContent);
         }
-        i = i + 1;
     }
 
     writeFile(outputDir + "/style.css", getStylesheet());
@@ -103,13 +95,10 @@ function generateIndexPage(files: string[]): string {
     html = html + "<h2>Modules</h2>\n";
     html = html + "<ul>\n";
 
-    let i = 0;
-    while (i < files.length) {
-        let file = files[i];
+    for (let file of files) {
         let name = fileToModuleName(file);
         let href = fileToHtmlPath(file);
         html = html + "<li><a href=\"" + href + "\">" + name + "</a></li>\n";
-        i = i + 1;
     }
 
     html = html + "</ul>\n";
@@ -132,9 +121,7 @@ function generateFileDocs(file: string, content: string, includePrivate: boolean
 
     if (exports.functions.length > 0) {
         html = html + "<h2>Functions</h2>\n";
-        let i = 0;
-        while (i < exports.functions.length) {
-            let fn = exports.functions[i];
+        for (let fn of exports.functions) {
             html = html + "<div class=\"item\">\n";
             html = html + "<h3>" + fn.name + "</h3>\n";
             html = html + "<pre>" + fn.signature + "</pre>\n";
@@ -142,22 +129,18 @@ function generateFileDocs(file: string, content: string, includePrivate: boolean
                 html = html + "<p>" + fn.doc + "</p>\n";
             }
             html = html + "</div>\n";
-            i = i + 1;
         }
     }
 
     if (exports.types.length > 0) {
         html = html + "<h2>Types</h2>\n";
-        let i = 0;
-        while (i < exports.types.length) {
-            let t = exports.types[i];
+        for (let t of exports.types) {
             html = html + "<div class=\"item\">\n";
             html = html + "<h3>" + t.name + "</h3>\n";
             if (t.doc != "") {
                 html = html + "<p>" + t.doc + "</p>\n";
             }
             html = html + "</div>\n";
-            i = i + 1;
         }
     }
 
@@ -237,9 +220,7 @@ function discoverSourceFilesRecursive(dir: string, files: string[]): void {
     }
 
     let entries = fs.readdirSync(dir);
-    let i = 0;
-    while (i < entries.length) {
-        let entry = entries[i];
+    for (let entry of entries) {
         let fullPath = dir + "/" + entry;
 
         let stats = fs.statSync(fullPath);
@@ -248,8 +229,6 @@ function discoverSourceFilesRecursive(dir: string, files: string[]): void {
         } else if (entry.indexOf(".ot") == entry.length - 3) {
             files.push(fullPath);
         }
-
-        i = i + 1;
     }
 }
 

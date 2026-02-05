@@ -13,8 +13,7 @@ function parseFmtArgs(args: string[]): FmtOptions {
         files: []
     };
 
-    let i = 0;
-    while (i < args.length) {
+    for (let i = 0; i < args.length; i = i + 1) {
         let arg = args[i];
 
         if (arg == "--check") {
@@ -24,8 +23,6 @@ function parseFmtArgs(args: string[]): FmtOptions {
         } else if (arg[0] != "-") {
             options.files.push(arg);
         }
-
-        i = i + 1;
     }
 
     return options;
@@ -48,9 +45,7 @@ function runFmt(args: string[]): number {
     let unchanged = 0;
     let errors = 0;
 
-    let i = 0;
-    while (i < files.length) {
-        let file = files[i];
+    for (let file of files) {
         let result = formatFile(file, options.check);
 
         if (result.error != "") {
@@ -67,8 +62,6 @@ function runFmt(args: string[]): number {
                 console.log("Unchanged: " + file);
             }
         }
-
-        i = i + 1;
     }
 
     if (options.check) {
@@ -120,11 +113,8 @@ function formatSource(source: string): string {
     let lines = source.split("\n");
     let result: string[] = [];
 
-    let i = 0;
-    while (i < lines.length) {
-        let line = trimRight(lines[i]);
-        result.push(line);
-        i = i + 1;
+    for (let line of lines) {
+        result.push(trimRight(line));
     }
 
     let output = result.join("\n");
@@ -155,9 +145,7 @@ function discoverSourceFilesRecursive(dir: string, files: string[]): void {
     }
 
     let entries = fs.readdirSync(dir);
-    let i = 0;
-    while (i < entries.length) {
-        let entry = entries[i];
+    for (let entry of entries) {
         let fullPath = dir + "/" + entry;
 
         let stats = fs.statSync(fullPath);
@@ -166,8 +154,6 @@ function discoverSourceFilesRecursive(dir: string, files: string[]): void {
         } else if (entry.indexOf(".ot") == entry.length - 3) {
             files.push(fullPath);
         }
-
-        i = i + 1;
     }
 }
 
