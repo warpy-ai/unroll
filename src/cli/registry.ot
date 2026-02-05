@@ -559,44 +559,279 @@ function runLogin(args: string[]): number {
         }
     }
 
-    console.log("Logging in to " + config.url + "...");
+    let baseUrl = config.url.replace("/api/v1", "");
+    console.log("Logging in to " + baseUrl + "...");
+
+    // Start device authorization flow
+    let deviceResult = startDeviceAuth(baseUrl);
+    if (deviceResult.error != "") {
+        // Fallback to manual token entry
+        console.log("");
+        console.log("Falling back to manual login.");
+        console.log("");
+        console.log("Visit this URL to authenticate:");
+        console.log(baseUrl + "/auth/github");
+        console.log("");
+        console.log("Then paste your token below:");
+
+        let token = readLine();
+
+        if (token == "" || token == null) {
+            console.error("Error: no token provided");
+            return 1;
+        }
+
+        token = token.trim();
+
+        let validResult = validateToken(token);
+        if (validResult.error != "") {
+            console.error("Error: " + validResult.error);
+            return 1;
+        }
+
+        if (validResult.data == null) {
+            console.error("Error: invalid token");
+            return 1;
+        }
+
+        let user = validResult.data as UserInfo;
+
+        let saved = saveCredentials(config.url, token);
+        if (!saved) {
+            console.error("Error: could not save credentials");
+            return 1;
+        }
+
+        console.log("");
+        console.log("Logged in as " + user.username);
+        return 0;
+    }
+
+    // Open browser to verification URL
     console.log("");
-    console.log("Visit this URL to authenticate:");
-    console.log(config.url.replace("/api/v1", "") + "/cli/login");
+    console.log("Opening browser to complete authentication...");
+    console.log("If the browser doesn't open, visit: " + deviceResult.verificationUri);
     console.log("");
-    console.log("Then paste your token below:");
 
-    let token = readLine();
+    openInBrowser(deviceResult.verificationUri);
 
-    if (token == "" || token == null) {
-        console.error("Error: no token provided");
+    // Poll for token
+    console.log("Waiting for authorization...");
+    let pollResult = pollDeviceAuth(baseUrl, deviceResult.deviceCode, deviceResult.interval);
+
+    if (pollResult.error != "") {
+        console.error("Error: " + pollResult.error);
         return 1;
     }
 
-    token = token.trim();
-
-    let validResult = validateToken(token);
-    if (validResult.error != "") {
-        console.error("Error: " + validResult.error);
+    if (pollResult.token == "") {
+        console.error("Error: authorization timed out or was denied");
         return 1;
     }
 
-    if (validResult.data == null) {
-        console.error("Error: invalid token");
-        return 1;
-    }
-
-    let user = validResult.data as UserInfo;
-
-    let saved = saveCredentials(config.url, token);
+    let saved = saveCredentials(config.url, pollResult.token);
     if (!saved) {
         console.error("Error: could not save credentials");
         return 1;
     }
 
     console.log("");
-    console.log("Logged in as " + user.username);
+    console.log("Logged in as " + pollResult.username);
     return 0;
+}
+
+interface DeviceAuthResult {
+    deviceCode: string;
+    userCode: string;
+    verificationUri: string;
+    expiresIn: number;
+    interval: number;
+    error: string;
+}
+
+interface DevicePollResult {
+    status: string;
+    token: string;
+    username: string;
+    error: string;
+}
+
+function startDeviceAuth(baseUrl: string): DeviceAuthResult {
+    let result: DeviceAuthResult = {
+        deviceCode: "",
+        userCode: "",
+        verificationUri: "",
+        expiresIn: 0,
+        interval: 5,
+        error: ""
+    };
+
+    let url = baseUrl + "/auth/device";
+    let curlResult = process.exec("curl", [
+        "-s", "-X", "POST",
+        "-H", "Content-Type: application/json",
+        "-d", "{}",
+        url
+    ]);
+
+    if (curlResult.exitCode != 0) {
+        result.error = "Failed to start device authorization (exit " + curlResult.exitCode + ")";
+        return result;
+    }
+
+    let response = curlResult.stdout.trim();
+    if (response == "" || response[0] != "{") {
+        result.error = "Invalid response from server: " + response.substring(0, 100);
+        return result;
+    }
+
+    // Extract fields from JSON response using string operations
+    result.deviceCode = extractJsonString(response, "device_code");
+    result.userCode = extractJsonString(response, "user_code");
+    result.verificationUri = extractJsonString(response, "verification_uri");
+    result.expiresIn = extractJsonNumber(response, "expires_in", 600);
+    result.interval = extractJsonNumber(response, "interval", 5);
+
+    if (result.deviceCode == "" || result.verificationUri == "") {
+        result.error = "Invalid device authorization response";
+        return result;
+    }
+
+    return result;
+}
+
+function pollDeviceAuth(baseUrl: string, deviceCode: string, interval: number): DevicePollResult {
+    let result: DevicePollResult = {
+        status: "",
+        token: "",
+        username: "",
+        error: ""
+    };
+
+    let maxAttempts = 120; // 10 minutes with 5 second intervals
+    let attempts = 0;
+
+    while (attempts < maxAttempts) {
+        let curlResult = process.exec("curl", [
+            "-s", "-X", "POST",
+            "-H", "Content-Type: application/json",
+            "-d", "{\"device_code\": \"" + deviceCode + "\"}",
+            baseUrl + "/auth/device/poll"
+        ]);
+
+        if (curlResult.exitCode != 0) {
+            result.error = "Failed to poll for authorization";
+            return result;
+        }
+
+        let response = curlResult.stdout.trim();
+        if (response == "" || response[0] != "{") {
+            result.error = "Invalid poll response";
+            return result;
+        }
+
+        result.status = extractJsonString(response, "status");
+
+        if (result.status == "complete") {
+            result.token = extractJsonString(response, "token");
+            result.username = extractJsonString(response, "username");
+            return result;
+        }
+
+        if (result.status == "expired") {
+            result.error = "Authorization expired";
+            return result;
+        }
+
+        // Status is "pending", wait and retry
+        sleep(interval);
+        attempts = attempts + 1;
+    }
+
+    result.error = "Authorization timed out";
+    return result;
+}
+
+function sleep(seconds: number): void {
+    process.exec("sleep", [seconds.toString()]);
+}
+
+// Extract a string value from JSON by key (simple implementation)
+function extractJsonString(json: string, key: string): string {
+    let searchKey = "\"" + key + "\":";
+    let keyIndex = json.indexOf(searchKey);
+    if (keyIndex == -1) {
+        return "";
+    }
+
+    let valueStart = keyIndex + searchKey.length;
+    // Skip whitespace
+    while (valueStart < json.length && (json[valueStart] == " " || json[valueStart] == "\t")) {
+        valueStart = valueStart + 1;
+    }
+
+    if (valueStart >= json.length || json[valueStart] != "\"") {
+        return "";
+    }
+
+    valueStart = valueStart + 1; // Skip opening quote
+    let valueEnd = valueStart;
+    while (valueEnd < json.length && json[valueEnd] != "\"") {
+        if (json[valueEnd] == "\\" && valueEnd + 1 < json.length) {
+            valueEnd = valueEnd + 2; // Skip escaped char
+        } else {
+            valueEnd = valueEnd + 1;
+        }
+    }
+
+    return json.substring(valueStart, valueEnd);
+}
+
+// Extract a number value from JSON by key
+function extractJsonNumber(json: string, key: string, defaultValue: number): number {
+    let searchKey = "\"" + key + "\":";
+    let keyIndex = json.indexOf(searchKey);
+    if (keyIndex == -1) {
+        return defaultValue;
+    }
+
+    let valueStart = keyIndex + searchKey.length;
+    // Skip whitespace
+    while (valueStart < json.length && (json[valueStart] == " " || json[valueStart] == "\t")) {
+        valueStart = valueStart + 1;
+    }
+
+    let valueEnd = valueStart;
+    while (valueEnd < json.length && json[valueEnd] >= "0" && json[valueEnd] <= "9") {
+        valueEnd = valueEnd + 1;
+    }
+
+    if (valueEnd == valueStart) {
+        return defaultValue;
+    }
+
+    let numStr = json.substring(valueStart, valueEnd);
+    let result = 0;
+    for (let i = 0; i < numStr.length; i = i + 1) {
+        result = result * 10 + (numStr.charCodeAt(i) - 48);
+    }
+    return result;
+}
+
+function openInBrowser(url: string): void {
+    let platform = process.env.get("OSTYPE");
+    if (platform == null || platform == "") {
+        let unameResult = process.exec("uname", []);
+        platform = unameResult.stdout.trim();
+    }
+
+    if (platform == "darwin" || platform.indexOf("Darwin") >= 0) {
+        process.exec("open", [url]);
+    } else if (platform.indexOf("linux") >= 0 || platform.indexOf("Linux") >= 0) {
+        process.exec("xdg-open", [url]);
+    } else {
+        process.exec("start", [url]);
+    }
 }
 
 function runLogout(args: string[]): number {
