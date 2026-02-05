@@ -3,7 +3,7 @@ interface RegistryConfig {
     token: string;
 }
 
-const DEFAULT_REGISTRY = "http://localhost:3000/api/v1";
+const DEFAULT_REGISTRY = "https://registry.oite.org/api/v1";
 
 function getRegistryConfig(): RegistryConfig {
     let config: RegistryConfig = {
