@@ -128,30 +128,72 @@ function parseRunArgs(args: string[]): RunOptions {
 function runRun(args: string[]): number {
     let options = parseRunArgs(args);
 
-    let buildArgs: string[] = [];
-    if (options.release) {
-        buildArgs.push("--release");
-    }
-
-    let buildResult = runBuild(buildArgs);
-    if (buildResult != 0) {
-        return buildResult;
-    }
-
     let manifest = loadManifest("./unroll.toml");
     if (manifest == null) {
+        console.error("Error: could not find unroll.toml");
         return 1;
     }
 
-    let profile = options.release ? "release" : "dev";
-    let binaryPath = "./target/" + profile + "/" + manifest.name;
+    // Find the main source file
+    let mainFile = "./src/main.ot";
+    if (!fs.existsSync(mainFile)) {
+        console.error("Error: could not find src/main.ot");
+        return 1;
+    }
 
-    console.log("");
-    console.log("Running " + binaryPath + "...");
+    // Find oitec interpreter
+    let oitec = findOitecInterpreter();
+    if (oitec == "") {
+        console.error("Error: could not find oitec. Make sure it's in PATH or OITEC_PATH is set.");
+        return 1;
+    }
+
+    console.log("Running " + manifest.name + "...");
     console.log("");
 
-    let exitCode = executeProcess(binaryPath, options.args);
-    return exitCode;
+    let execArgs: string[] = [mainFile];
+    if (options.args.length > 0) {
+        execArgs.push("--");
+        for (let i = 0; i < options.args.length; i = i + 1) {
+            execArgs.push(options.args[i]);
+        }
+    }
+
+    let result = process.exec(oitec, execArgs);
+
+    if (result.stdout != "") {
+        console.log(result.stdout);
+    }
+    if (result.stderr != "") {
+        console.error(result.stderr);
+    }
+
+    return result.exitCode;
+}
+
+function findOitecInterpreter(): string {
+    // Check OITEC_PATH env var first
+    let oitecPath = process.env.get("OITEC_PATH");
+    if (oitecPath != "" && oitecPath != null) {
+        return oitecPath;
+    }
+
+    // Check common locations
+    let locations = [
+        "oitec",
+        "/usr/local/bin/oitec",
+        process.env.get("HOME") + "/.oite/bin/oitec"
+    ];
+
+    for (let i = 0; i < locations.length; i = i + 1) {
+        let loc = locations[i];
+        let result = process.exec("which", [loc]);
+        if (result.exitCode == 0) {
+            return result.stdout.trim();
+        }
+    }
+
+    return "";
 }
 
 function executeProcess(path: string, args: string[]): number {
