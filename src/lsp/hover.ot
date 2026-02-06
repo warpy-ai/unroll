@@ -28,8 +28,7 @@ function handleHover(id: any, params: any, documents: DocumentStore, symbols: Sy
     // 1. Look up in symbol index
     let symbolMatches = symbols.findByName(word);
     if (symbolMatches.length > 0) {
-        let hover = buildSymbolHover(symbolMatches);
-        sendResponse(id, hover);
+        sendResponse(id, buildSymbolHover(symbolMatches));
         return;
     }
 
@@ -47,7 +46,6 @@ function handleHover(id: any, params: any, documents: DocumentStore, symbols: Sy
         return;
     }
 
-    // No hover info
     sendResponse(id, null);
 }
 
@@ -91,7 +89,10 @@ function getBuiltinTypeHover(word: string): any {
     else if (word == "Map") description = "**type** `Map<K, V>`\n\nKey-value collection with unique keys.";
     else if (word == "Set") description = "**type** `Set<T>`\n\nCollection of unique values.";
     else if (word == "Promise") description = "**type** `Promise<T>`\n\nRepresents an asynchronous operation's result.";
-    else return null;
+
+    if (description == "") {
+        return null;
+    }
 
     return {
         contents: {
@@ -123,7 +124,10 @@ function getKeywordHover(word: string): any {
     else if (word == "borrow") description = "**keyword** `borrow` (Oite)\n\nBorrow a reference to a value without taking ownership.";
     else if (word == "move") description = "**keyword** `move` (Oite)\n\nExplicitly move ownership of a value.";
     else if (word == "mut") description = "**keyword** `mut` (Oite)\n\nMutable borrow modifier. `&mut` allows modifying borrowed data.";
-    else return null;
+
+    if (description == "") {
+        return null;
+    }
 
     return {
         contents: {

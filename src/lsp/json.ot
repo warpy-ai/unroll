@@ -304,7 +304,6 @@ function escapeJsonString(s: string): string {
 }
 
 function isArray(value: any): boolean {
-    // Check if value has numeric length and push method (duck typing)
     if (value == null) return false;
     if (typeof value != "object") return false;
     if (typeof value.length == "number" && typeof value.push == "function") {

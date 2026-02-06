@@ -14,32 +14,20 @@ const SEVERITY_HINT = 4;
  * Run diagnostics on a document and publish results via LSP notification.
  */
 function publishDiagnostics(uri: string, content: string): void {
-    let filePath = uriToPath(uri);
-
-    // Determine file extension for temp file
-    let ext = ".ot";
-    if (filePath.endsWith(".ts") || filePath.endsWith(".tsx")) {
-        ext = filePath.substring(filePath.lastIndexOf("."));
-    } else if (filePath.endsWith(".js") || filePath.endsWith(".jsx")) {
-        ext = filePath.substring(filePath.lastIndexOf("."));
-    }
-
-    // Write content to temp file for oitec check
-    let tmpFile = "/tmp/oite-lsp-check" + ext;
+    let tmpFile = "/tmp/oite-lsp-check.ot";
     fs.writeFileSync(tmpFile, content);
 
-    // Find oitec binary
     let oitecPath = findOitec();
     if (oitecPath == "") {
-        // Can't find oitec, skip diagnostics
+        sendNotification("textDocument/publishDiagnostics", {
+            uri: uri,
+            diagnostics: []
+        });
         return;
     }
 
-    // Run oitec check
-    let result = process.exec(oitecPath, ["check", tmpFile]);
-
-    // Parse diagnostics from stderr output
     let diagnostics: any[] = [];
+    let result = process.exec(oitecPath, ["check", tmpFile]);
     let stderr = result.stderr;
 
     if (stderr != "" && result.exitCode != 0) {
@@ -49,13 +37,10 @@ function publishDiagnostics(uri: string, content: string): void {
         }
     }
 
-    // Clean up temp file
     if (fs.existsSync(tmpFile)) {
-        // Best effort cleanup
         fs.writeFileSync(tmpFile, "");
     }
 
-    // Send diagnostics notification
     sendNotification("textDocument/publishDiagnostics", {
         uri: uri,
         diagnostics: diagnostics
@@ -219,6 +204,7 @@ function findOitec(): string {
     if (home == undefined) home = "";
 
     let candidates: string[] = [
+        "/Volumes/WD_2TB/warpy/oite/target/debug/oitec",
         home + "/.oite/bin/oitec",
         "/usr/local/bin/oitec",
         "/usr/bin/oitec"
