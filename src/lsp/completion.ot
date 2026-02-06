@@ -1,0 +1,147 @@
+// LSP Completion Handler
+// Returns keyword, type, and symbol completions.
+
+import { sendResponse } from "./transport.ot";
+import { DocumentStore } from "./documents.ot";
+import { SymbolIndex } from "./symbols.ot";
+
+// LSP CompletionItemKind constants
+const KIND_TEXT = 1;
+const KIND_METHOD = 2;
+const KIND_FUNCTION = 3;
+const KIND_CONSTRUCTOR = 4;
+const KIND_FIELD = 5;
+const KIND_VARIABLE = 6;
+const KIND_CLASS = 7;
+const KIND_INTERFACE = 8;
+const KIND_MODULE = 9;
+const KIND_PROPERTY = 10;
+const KIND_KEYWORD = 14;
+const KIND_SNIPPET = 15;
+const KIND_TYPE_PARAMETER = 25;
+
+/**
+ * Handle textDocument/completion request.
+ */
+function handleCompletion(id: any, params: any, documents: DocumentStore, symbols: SymbolIndex): void {
+    let items: any[] = [];
+
+    // 1. Language keywords
+    let keywords = getKeywordCompletions();
+    for (let kw of keywords) {
+        items.push(kw);
+    }
+
+    // 2. Built-in types
+    let types = getTypeCompletions();
+    for (let t of types) {
+        items.push(t);
+    }
+
+    // 3. Oite-specific keywords
+    let oiteKeywords = getOiteCompletions();
+    for (let ok of oiteKeywords) {
+        items.push(ok);
+    }
+
+    // 4. Symbols from open documents
+    let allSymbols = symbols.getAll();
+    let seenNames: string[] = [];
+    for (let sym of allSymbols) {
+        // Deduplicate
+        if (seenNames.indexOf(sym.name) >= 0) continue;
+        seenNames.push(sym.name);
+
+        let kind = KIND_VARIABLE;
+        if (sym.kind == "function") kind = KIND_FUNCTION;
+        else if (sym.kind == "class") kind = KIND_CLASS;
+        else if (sym.kind == "interface") kind = KIND_INTERFACE;
+        else if (sym.kind == "type") kind = KIND_TYPE_PARAMETER;
+
+        items.push({
+            label: sym.name,
+            kind: kind,
+            detail: sym.detail
+        });
+    }
+
+    sendResponse(id, items);
+}
+
+function getKeywordCompletions(): any[] {
+    let keywords = [
+        "let", "const", "var",
+        "function", "async", "await",
+        "class", "extends", "new",
+        "interface", "type", "enum",
+        "import", "export", "from", "as",
+        "if", "else",
+        "for", "while", "do",
+        "switch", "case", "default", "break",
+        "return", "throw", "try", "catch", "finally",
+        "true", "false", "null", "undefined",
+        "typeof", "instanceof", "in", "of",
+        "this", "super",
+        "static", "public", "private", "protected",
+        "readonly", "declare"
+    ];
+
+    let items: any[] = [];
+    for (let kw of keywords) {
+        items.push({
+            label: kw,
+            kind: KIND_KEYWORD,
+            detail: "keyword"
+        });
+    }
+    return items;
+}
+
+function getTypeCompletions(): any[] {
+    let types = [
+        { name: "string", detail: "String primitive type" },
+        { name: "number", detail: "Numeric primitive type" },
+        { name: "boolean", detail: "Boolean primitive type (true/false)" },
+        { name: "void", detail: "Void return type" },
+        { name: "any", detail: "Any type (disables type checking)" },
+        { name: "null", detail: "Null type" },
+        { name: "undefined", detail: "Undefined type" },
+        { name: "object", detail: "Object type" },
+        { name: "Array", detail: "Array<T> generic type" },
+        { name: "Map", detail: "Map<K, V> key-value collection" },
+        { name: "Set", detail: "Set<T> unique value collection" },
+        { name: "Promise", detail: "Promise<T> async result" }
+    ];
+
+    let items: any[] = [];
+    for (let t of types) {
+        items.push({
+            label: t.name,
+            kind: KIND_CLASS,
+            detail: t.detail
+        });
+    }
+    return items;
+}
+
+function getOiteCompletions(): any[] {
+    let items: any[] = [];
+
+    // Oite ownership/lifetime keywords
+    items.push({ label: "borrow", kind: KIND_KEYWORD, detail: "Borrow reference (Oite)" });
+    items.push({ label: "move", kind: KIND_KEYWORD, detail: "Move ownership (Oite)" });
+    items.push({ label: "mut", kind: KIND_KEYWORD, detail: "Mutable modifier (Oite)" });
+
+    // Common patterns
+    items.push({ label: "console.log", kind: KIND_FUNCTION, detail: "Log to console" });
+    items.push({ label: "console.error", kind: KIND_FUNCTION, detail: "Log to stderr" });
+    items.push({ label: "process.exit", kind: KIND_FUNCTION, detail: "Exit process with code" });
+    items.push({ label: "process.exec", kind: KIND_FUNCTION, detail: "Execute shell command" });
+    items.push({ label: "fs.readFileSync", kind: KIND_FUNCTION, detail: "Read file as string" });
+    items.push({ label: "fs.writeFileSync", kind: KIND_FUNCTION, detail: "Write string to file" });
+    items.push({ label: "fs.existsSync", kind: KIND_FUNCTION, detail: "Check if path exists" });
+
+    return items;
+}
+
+export { handleCompletion };

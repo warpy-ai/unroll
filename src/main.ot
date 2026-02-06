@@ -13,6 +13,7 @@ import { runCheck } from "./cli/check.ot";
 import { runDoc } from "./cli/doc.ot";
 import { runSearch, runInfo, runPublish, runYank, runLogin, runLogout } from "./cli/registry.ot";
 import { runUpgrade, checkForUpdates } from "./cli/upgrade.ot";
+import { runLsp } from "./lsp/server.ot";
 
 const VERSION = "0.1.0";
 
@@ -110,6 +111,11 @@ function main(args: string[]): number {
     // Toolchain
     if (command == "upgrade") {
         return runUpgrade(cmdArgs);
+    }
+
+    // LSP Server
+    if (command == "lsp") {
+        return runLsp(cmdArgs);
     }
 
     // Unknown command

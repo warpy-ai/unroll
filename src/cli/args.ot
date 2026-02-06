@@ -69,6 +69,7 @@ function showHelp(): void {
     console.log("        lint             Run linter");
     console.log("        check            Type check");
     console.log("        doc              Generate documentation");
+    console.log("        lsp              Start Language Server Protocol server");
     console.log("");
     console.log("    Registry:");
     console.log("        search <query>   Search packages");

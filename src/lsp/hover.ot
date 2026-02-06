@@ -1,0 +1,136 @@
+// LSP Hover Handler
+// Shows information when hovering over symbols, types, and keywords.
+
+import { sendResponse } from "./transport.ot";
+import { DocumentStore } from "./documents.ot";
+import { SymbolIndex, getWordAtPosition } from "./symbols.ot";
+
+/**
+ * Handle textDocument/hover request.
+ */
+function handleHover(id: any, params: any, documents: DocumentStore, symbols: SymbolIndex): void {
+    let uri = params.textDocument.uri;
+    let line = params.position.line;
+    let character = params.position.character;
+
+    let content = documents.get(uri);
+    if (content == null) {
+        sendResponse(id, null);
+        return;
+    }
+
+    let word = getWordAtPosition(content, line, character);
+    if (word == "") {
+        sendResponse(id, null);
+        return;
+    }
+
+    // 1. Look up in symbol index
+    let symbolMatches = symbols.findByName(word);
+    if (symbolMatches.length > 0) {
+        let hover = buildSymbolHover(symbolMatches);
+        sendResponse(id, hover);
+        return;
+    }
+
+    // 2. Look up in built-in types
+    let typeHover = getBuiltinTypeHover(word);
+    if (typeHover != null) {
+        sendResponse(id, typeHover);
+        return;
+    }
+
+    // 3. Look up in keywords
+    let keywordHover = getKeywordHover(word);
+    if (keywordHover != null) {
+        sendResponse(id, keywordHover);
+        return;
+    }
+
+    // No hover info
+    sendResponse(id, null);
+}
+
+function buildSymbolHover(symbolMatches: any[]): any {
+    let parts: string[] = [];
+
+    for (let sym of symbolMatches) {
+        let kindLabel = sym.kind;
+        if (kindLabel == "function") kindLabel = "function";
+        else if (kindLabel == "class") kindLabel = "class";
+        else if (kindLabel == "interface") kindLabel = "interface";
+        else if (kindLabel == "variable") kindLabel = "variable";
+        else if (kindLabel == "type") kindLabel = "type";
+
+        parts.push("**" + kindLabel + "** `" + sym.name + "`");
+        if (sym.detail != "") {
+            parts.push("```typescript\n" + sym.detail + "\n```");
+        }
+    }
+
+    return {
+        contents: {
+            kind: "markdown",
+            value: parts.join("\n\n")
+        }
+    };
+}
+
+function getBuiltinTypeHover(word: string): any {
+    let description = "";
+
+    if (word == "string") description = "**type** `string`\n\nString primitive type. Represents a sequence of UTF-16 characters.";
+    else if (word == "number") description = "**type** `number`\n\nNumeric primitive type. 64-bit IEEE 754 floating point.";
+    else if (word == "boolean") description = "**type** `boolean`\n\nBoolean primitive type. Either `true` or `false`.";
+    else if (word == "void") description = "**type** `void`\n\nVoid type. Indicates a function returns no value.";
+    else if (word == "any") description = "**type** `any`\n\nAny type. Disables type checking for this value.";
+    else if (word == "null") description = "**type** `null`\n\nNull type. Represents an intentionally empty value.";
+    else if (word == "undefined") description = "**type** `undefined`\n\nUndefined type. Variable declared but not assigned.";
+    else if (word == "object") description = "**type** `object`\n\nObject type. A non-primitive value with properties.";
+    else if (word == "Array") description = "**type** `Array<T>`\n\nGeneric array type. Ordered collection of elements.";
+    else if (word == "Map") description = "**type** `Map<K, V>`\n\nKey-value collection with unique keys.";
+    else if (word == "Set") description = "**type** `Set<T>`\n\nCollection of unique values.";
+    else if (word == "Promise") description = "**type** `Promise<T>`\n\nRepresents an asynchronous operation's result.";
+    else return null;
+
+    return {
+        contents: {
+            kind: "markdown",
+            value: description
+        }
+    };
+}
+
+function getKeywordHover(word: string): any {
+    let description = "";
+
+    if (word == "let") description = "**keyword** `let`\n\nDeclares a block-scoped variable. In Oite, `let` bindings use move semantics by default.";
+    else if (word == "const") description = "**keyword** `const`\n\nDeclares a read-only constant. Value cannot be reassigned after initialization.";
+    else if (word == "function") description = "**keyword** `function`\n\nDeclares a named function.";
+    else if (word == "class") description = "**keyword** `class`\n\nDeclares a class with constructor, methods, and properties.";
+    else if (word == "interface") description = "**keyword** `interface`\n\nDeclares a type interface. Describes the shape of an object.";
+    else if (word == "import") description = "**keyword** `import`\n\nImports bindings from another module.\n\n```typescript\nimport { name } from \"./module\";\n```";
+    else if (word == "export") description = "**keyword** `export`\n\nExports bindings for use by other modules.\n\n```typescript\nexport function name() { }\n```";
+    else if (word == "return") description = "**keyword** `return`\n\nReturns a value from a function.";
+    else if (word == "if") description = "**keyword** `if`\n\nConditional execution.";
+    else if (word == "else") description = "**keyword** `else`\n\nAlternate branch of an `if` statement.";
+    else if (word == "for") description = "**keyword** `for`\n\nLoop construct. Supports `for..of` and C-style `for(;;)`.";
+    else if (word == "while") description = "**keyword** `while`\n\nLoop that executes while condition is true.";
+    else if (word == "async") description = "**keyword** `async`\n\nMarks a function as asynchronous (returns a Promise).";
+    else if (word == "await") description = "**keyword** `await`\n\nWaits for a Promise to resolve.";
+    else if (word == "new") description = "**keyword** `new`\n\nCreates a new instance of a class.";
+    else if (word == "typeof") description = "**keyword** `typeof`\n\nReturns the type of a value as a string.";
+    else if (word == "borrow") description = "**keyword** `borrow` (Oite)\n\nBorrow a reference to a value without taking ownership.";
+    else if (word == "move") description = "**keyword** `move` (Oite)\n\nExplicitly move ownership of a value.";
+    else if (word == "mut") description = "**keyword** `mut` (Oite)\n\nMutable borrow modifier. `&mut` allows modifying borrowed data.";
+    else return null;
+
+    return {
+        contents: {
+            kind: "markdown",
+            value: description
+        }
+    };
+}
+
+export { handleHover };

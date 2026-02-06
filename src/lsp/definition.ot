@@ -1,0 +1,169 @@
+// LSP Go-to-Definition Handler
+// Resolves symbol definitions across open documents.
+
+import { sendResponse } from "./transport.ot";
+import { DocumentStore } from "./documents.ot";
+import { SymbolIndex, getWordAtPosition } from "./symbols.ot";
+
+/**
+ * Handle textDocument/definition request.
+ */
+function handleDefinition(id: any, params: any, documents: DocumentStore, symbols: SymbolIndex): void {
+    let uri = params.textDocument.uri;
+    let line = params.position.line;
+    let character = params.position.character;
+
+    let content = documents.get(uri);
+    if (content == null) {
+        sendResponse(id, null);
+        return;
+    }
+
+    let word = getWordAtPosition(content, line, character);
+    if (word == "") {
+        sendResponse(id, null);
+        return;
+    }
+
+    // 1. Search symbol index across ALL open documents
+    let matches = symbols.findByName(word);
+    if (matches.length > 0) {
+        let locations: any[] = [];
+        for (let sym of matches) {
+            // Skip import symbols — we want the actual definition
+            if (sym.kind == "import") continue;
+
+            locations.push({
+                uri: sym.uri,
+                range: {
+                    start: { line: sym.line, character: sym.column },
+                    end: { line: sym.line, character: sym.column + sym.name.length }
+                }
+            });
+        }
+
+        // If we filtered all results (only imports), include them as fallback
+        if (locations.length == 0) {
+            for (let sym of matches) {
+                locations.push({
+                    uri: sym.uri,
+                    range: {
+                        start: { line: sym.line, character: sym.column },
+                        end: { line: sym.line, character: sym.column + sym.name.length }
+                    }
+                });
+            }
+        }
+
+        if (locations.length == 1) {
+            sendResponse(id, locations[0]);
+        } else {
+            sendResponse(id, locations);
+        }
+        return;
+    }
+
+    // 2. Fallback: scan current document for declaration patterns
+    let fallbackLocation = scanForDefinition(word, content, uri);
+    if (fallbackLocation != null) {
+        sendResponse(id, fallbackLocation);
+        return;
+    }
+
+    // No definition found
+    sendResponse(id, null);
+}
+
+/**
+ * Scan document content for a declaration of the given name.
+ * Fallback when symbol index doesn't have a match.
+ */
+function scanForDefinition(name: string, content: string, uri: string): any {
+    let lines = content.split("\n");
+
+    for (let i = 0; i < lines.length; i = i + 1) {
+        let line = lines[i].trim();
+
+        // Strip export prefix
+        let rest = line;
+        if (rest.startsWith("export ")) {
+            rest = rest.substring(7).trim();
+        }
+
+        // function NAME
+        if (matchDeclaration(rest, "function ", name)) {
+            let col = lines[i].indexOf(name);
+            return makeLocation(uri, i, col, name.length);
+        }
+
+        // async function NAME
+        if (rest.startsWith("async ")) {
+            let afterAsync = rest.substring(6).trim();
+            if (matchDeclaration(afterAsync, "function ", name)) {
+                let col = lines[i].indexOf(name);
+                return makeLocation(uri, i, col, name.length);
+            }
+        }
+
+        // class NAME
+        if (matchDeclaration(rest, "class ", name)) {
+            let col = lines[i].indexOf(name);
+            return makeLocation(uri, i, col, name.length);
+        }
+
+        // interface NAME
+        if (matchDeclaration(rest, "interface ", name)) {
+            let col = lines[i].indexOf(name);
+            return makeLocation(uri, i, col, name.length);
+        }
+
+        // let NAME = or const NAME =
+        if (matchDeclaration(rest, "let ", name) || matchDeclaration(rest, "const ", name)) {
+            let col = lines[i].indexOf(name);
+            return makeLocation(uri, i, col, name.length);
+        }
+
+        // type NAME
+        if (matchDeclaration(rest, "type ", name)) {
+            let col = lines[i].indexOf(name);
+            return makeLocation(uri, i, col, name.length);
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Check if a line starts with a keyword followed by the given name.
+ */
+function matchDeclaration(line: string, keyword: string, name: string): boolean {
+    if (!line.startsWith(keyword)) return false;
+    let rest = line.substring(keyword.length);
+    if (!rest.startsWith(name)) return false;
+
+    // Make sure the name ends at a word boundary
+    if (rest.length > name.length) {
+        let nextChar = rest[name.length];
+        if ((nextChar >= "a" && nextChar <= "z") ||
+            (nextChar >= "A" && nextChar <= "Z") ||
+            (nextChar >= "0" && nextChar <= "9") ||
+            nextChar == "_" || nextChar == "$") {
+            return false; // Part of a longer identifier
+        }
+    }
+
+    return true;
+}
+
+function makeLocation(uri: string, line: number, col: number, nameLen: number): any {
+    if (col < 0) col = 0;
+    return {
+        uri: uri,
+        range: {
+            start: { line: line, character: col },
+            end: { line: line, character: col + nameLen }
+        }
+    };
+}
+
+export { handleDefinition };
