@@ -1,0 +1,351 @@
+// JSON Parser and Serializer for LSP messages
+// Parser reused from registry/client.ot, serializer added for LSP output
+
+// ============================================================================
+// JSON Parser (recursive descent)
+// ============================================================================
+
+class JsonParser {
+    text: string;
+    pos: number;
+    len: number;
+
+    constructor(text: string) {
+        this.text = text;
+        this.pos = 0;
+        this.len = text.length;
+    }
+
+    parse(): any {
+        this.skipWhitespace();
+        return this.parseValue();
+    }
+
+    parseValue(): any {
+        this.skipWhitespace();
+        if (this.pos >= this.len) return null;
+
+        let ch = this.text[this.pos];
+
+        if (ch == '"') return this.parseString();
+        if (ch == '{') return this.parseObject();
+        if (ch == '[') return this.parseArray();
+        if (ch == 't') return this.parseTrue();
+        if (ch == 'f') return this.parseFalse();
+        if (ch == 'n') return this.parseNull();
+        if (ch == '-' || (ch >= '0' && ch <= '9')) return this.parseNumber();
+
+        return null;
+    }
+
+    parseString(): string {
+        this.pos++; // Skip opening quote
+        let result = "";
+
+        while (this.pos < this.len) {
+            let ch = this.text[this.pos];
+
+            if (ch == '"') {
+                this.pos++;
+                return result;
+            }
+
+            if (ch == '\\' && this.pos + 1 < this.len) {
+                this.pos++;
+                let escaped = this.text[this.pos];
+                if (escaped == '"') result = result + '"';
+                else if (escaped == '\\') result = result + '\\';
+                else if (escaped == 'n') result = result + '\n';
+                else if (escaped == 'r') result = result + '\r';
+                else if (escaped == 't') result = result + '\t';
+                else if (escaped == '/') result = result + '/';
+                else result = result + escaped;
+            } else {
+                result = result + ch;
+            }
+            this.pos++;
+        }
+
+        return result;
+    }
+
+    parseNumber(): number {
+        let start = this.pos;
+
+        if (this.text[this.pos] == '-') this.pos++;
+
+        while (this.pos < this.len && this.text[this.pos] >= '0' && this.text[this.pos] <= '9') {
+            this.pos++;
+        }
+
+        if (this.pos < this.len && this.text[this.pos] == '.') {
+            this.pos++;
+            while (this.pos < this.len && this.text[this.pos] >= '0' && this.text[this.pos] <= '9') {
+                this.pos++;
+            }
+        }
+
+        if (this.pos < this.len && (this.text[this.pos] == 'e' || this.text[this.pos] == 'E')) {
+            this.pos++;
+            if (this.pos < this.len && (this.text[this.pos] == '+' || this.text[this.pos] == '-')) {
+                this.pos++;
+            }
+            while (this.pos < this.len && this.text[this.pos] >= '0' && this.text[this.pos] <= '9') {
+                this.pos++;
+            }
+        }
+
+        let numStr = this.text.substring(start, this.pos);
+        return parseFloat(numStr);
+    }
+
+    parseObject(): object {
+        this.pos++; // Skip {
+        this.skipWhitespace();
+
+        let obj: any = {};
+
+        if (this.pos < this.len && this.text[this.pos] == '}') {
+            this.pos++;
+            return obj;
+        }
+
+        while (this.pos < this.len) {
+            this.skipWhitespace();
+
+            if (this.text[this.pos] != '"') break;
+            let key = this.parseString();
+
+            this.skipWhitespace();
+            if (this.text[this.pos] != ':') break;
+            this.pos++;
+
+            let value = this.parseValue();
+            obj[key] = value;
+
+            this.skipWhitespace();
+
+            if (this.text[this.pos] == '}') {
+                this.pos++;
+                return obj;
+            }
+
+            if (this.text[this.pos] == ',') {
+                this.pos++;
+            }
+        }
+
+        return obj;
+    }
+
+    parseArray(): any[] {
+        this.pos++; // Skip [
+        this.skipWhitespace();
+
+        let arr: any[] = [];
+
+        if (this.pos < this.len && this.text[this.pos] == ']') {
+            this.pos++;
+            return arr;
+        }
+
+        while (this.pos < this.len) {
+            let value = this.parseValue();
+            arr.push(value);
+
+            this.skipWhitespace();
+
+            if (this.text[this.pos] == ']') {
+                this.pos++;
+                return arr;
+            }
+
+            if (this.text[this.pos] == ',') {
+                this.pos++;
+                this.skipWhitespace();
+            }
+        }
+
+        return arr;
+    }
+
+    parseTrue(): boolean {
+        if (this.text.substring(this.pos, this.pos + 4) == "true") {
+            this.pos += 4;
+            return true;
+        }
+        return false;
+    }
+
+    parseFalse(): boolean {
+        if (this.text.substring(this.pos, this.pos + 5) == "false") {
+            this.pos += 5;
+            return false;
+        }
+        return true;
+    }
+
+    parseNull(): null {
+        if (this.text.substring(this.pos, this.pos + 4) == "null") {
+            this.pos += 4;
+        }
+        return null;
+    }
+
+    skipWhitespace(): void {
+        while (this.pos < this.len) {
+            let ch = this.text[this.pos];
+            if (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r') {
+                this.pos++;
+            } else {
+                break;
+            }
+        }
+    }
+}
+
+function parseFloat(s: string): number {
+    let result = 0;
+    let decimal = false;
+    let decimalPlace = 0.1;
+    let negative = false;
+    let start = 0;
+
+    if (s.length > 0 && s[0] == '-') {
+        negative = true;
+        start = 1;
+    }
+
+    for (let i = start; i < s.length; i = i + 1) {
+        let ch = s[i];
+        if (ch == '.') {
+            decimal = true;
+        } else if (ch >= '0' && ch <= '9') {
+            let digit = ch.charCodeAt(0) - 48;
+            if (decimal) {
+                result = result + digit * decimalPlace;
+                decimalPlace = decimalPlace * 0.1;
+            } else {
+                result = result * 10 + digit;
+            }
+        }
+    }
+
+    if (negative) {
+        result = 0 - result;
+    }
+    return result;
+}
+
+/**
+ * Parse a JSON string into a value.
+ */
+function parseJson(text: string): any {
+    let parser = new JsonParser(text);
+    return parser.parse();
+}
+
+// ============================================================================
+// JSON Serializer
+// ============================================================================
+
+/**
+ * Serialize a value to a JSON string.
+ */
+function jsonStringify(value: any): string {
+    if (value == null) {
+        return "null";
+    }
+
+    let t = typeof value;
+
+    if (t == "string") {
+        return escapeJsonString(value as string);
+    }
+
+    if (t == "number") {
+        return "" + value;
+    }
+
+    if (t == "boolean") {
+        if (value) return "true";
+        return "false";
+    }
+
+    // Check if array
+    if (isArray(value)) {
+        return stringifyArray(value);
+    }
+
+    // Object
+    return stringifyObject(value);
+}
+
+function escapeJsonString(s: string): string {
+    let result = "\"";
+    for (let i = 0; i < s.length; i = i + 1) {
+        let c = s[i];
+        if (c == '"') {
+            result = result + "\\\"";
+        } else if (c == '\\') {
+            result = result + "\\\\";
+        } else if (c == '\n') {
+            result = result + "\\n";
+        } else if (c == '\r') {
+            result = result + "\\r";
+        } else if (c == '\t') {
+            result = result + "\\t";
+        } else {
+            result = result + c;
+        }
+    }
+    result = result + "\"";
+    return result;
+}
+
+function isArray(value: any): boolean {
+    // Check if value has numeric length and push method (duck typing)
+    if (value == null) return false;
+    if (typeof value != "object") return false;
+    if (typeof value.length == "number" && typeof value.push == "function") {
+        return true;
+    }
+    return false;
+}
+
+function stringifyArray(arr: any[]): string {
+    let result = "[";
+    for (let i = 0; i < arr.length; i = i + 1) {
+        if (i > 0) {
+            result = result + ",";
+        }
+        result = result + jsonStringify(arr[i]);
+    }
+    result = result + "]";
+    return result;
+}
+
+function stringifyObject(obj: any): string {
+    let keys = Object.keys(obj);
+    let result = "{";
+    let first = true;
+
+    for (let key of keys) {
+        let val = obj[key];
+        // Skip undefined values and functions
+        if (val === undefined) continue;
+        if (typeof val == "function") continue;
+
+        if (!first) {
+            result = result + ",";
+        }
+        first = false;
+
+        result = result + escapeJsonString(key) + ":" + jsonStringify(val);
+    }
+
+    result = result + "}";
+    return result;
+}
+
+export { parseJson, jsonStringify, JsonParser };

@@ -1,0 +1,117 @@
+// LSP Transport Layer
+// Handles JSON-RPC messages over stdin/stdout using the LSP protocol format:
+// Content-Length: <length>\r\n\r\n<json body>
+
+/**
+ * Read a single LSP message from stdin.
+ * Returns the JSON body string, or null on EOF/error.
+ */
+function readMessage(): string | null {
+    let contentLength = -1;
+
+    // Read headers until empty line
+    while (true) {
+        let line = process.stdin.readLine();
+        if (line == null) {
+            return null; // EOF
+        }
+
+        // Empty line signals end of headers
+        if (line == "" || line == "\r") {
+            break;
+        }
+
+        // Parse Content-Length header
+        if (line.startsWith("Content-Length:")) {
+            let valueStr = line.substring(15).trim();
+            contentLength = parseInt(valueStr);
+        }
+        // Ignore other headers (Content-Type, etc.)
+    }
+
+    if (contentLength <= 0) {
+        return null;
+    }
+
+    // Read exactly contentLength bytes of JSON body
+    let body = process.stdin.readBytes(contentLength);
+    return body;
+}
+
+/**
+ * Write a JSON-RPC message to stdout with LSP headers.
+ */
+function writeMessage(json: string): void {
+    let header = "Content-Length: " + json.length + "\r\n\r\n";
+    process.stdout.write(header);
+    process.stdout.write(json);
+}
+
+/**
+ * Send a JSON-RPC response for a request.
+ */
+function sendResponse(id: any, result: any): void {
+    let response: any = {
+        jsonrpc: "2.0",
+        id: id,
+        result: result
+    };
+    let json = jsonStringify(response);
+    writeMessage(json);
+}
+
+/**
+ * Send a JSON-RPC error response.
+ */
+function sendError(id: any, code: number, message: string): void {
+    let response: any = {
+        jsonrpc: "2.0",
+        id: id,
+        error: {
+            code: code,
+            message: message
+        }
+    };
+    let json = jsonStringify(response);
+    writeMessage(json);
+}
+
+/**
+ * Send a JSON-RPC notification (no id).
+ */
+function sendNotification(method: string, params: any): void {
+    let notification: any = {
+        jsonrpc: "2.0",
+        method: method,
+        params: params
+    };
+    let json = jsonStringify(notification);
+    writeMessage(json);
+}
+
+function parseInt(s: string): number {
+    let result = 0;
+    let negative = false;
+    let start = 0;
+
+    if (s.length > 0 && s[0] == "-") {
+        negative = true;
+        start = 1;
+    }
+
+    for (let i = start; i < s.length; i = i + 1) {
+        let c = s[i];
+        if (c >= "0" && c <= "9") {
+            result = result * 10 + (c.charCodeAt(0) - 48);
+        } else {
+            break;
+        }
+    }
+
+    if (negative) {
+        result = 0 - result;
+    }
+    return result;
+}
+
+export { readMessage, writeMessage, sendResponse, sendError, sendNotification };
