@@ -78,6 +78,10 @@ function showHelp(): void {
     console.log("        yank <pkg>@<ver> Mark a version as yanked");
     console.log("            --undo           Unyank a version");
     console.log("");
+    console.log("    Toolchain:");
+    console.log("        upgrade          Update oitec and unroll to latest version");
+    console.log("            --force          Force reinstall even if up to date");
+    console.log("");
     console.log("Run 'unroll <command> --help' for more info on a command.");
 }
 

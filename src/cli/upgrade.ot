@@ -1,0 +1,427 @@
+// Self-upgrade command and version checking
+
+const GITHUB_REPO = "warpy-ai/oite";
+const UNROLL_REPO = "warpy-ai/unroll";
+const GITHUB_API_URL = "https://api.github.com/repos/warpy-ai/oite/releases/latest";
+const CHECK_INTERVAL = 86400; // 24 hours in seconds
+
+interface UpgradeOptions {
+    force: boolean;
+}
+
+function parseUpgradeArgs(args: string[]): UpgradeOptions {
+    let options: UpgradeOptions = {
+        force: false
+    };
+
+    for (let i = 0; i < args.length; i = i + 1) {
+        let arg = args[i];
+        if (arg == "--force" || arg == "-f") {
+            options.force = true;
+        }
+    }
+
+    return options;
+}
+
+// Check for updates on startup (non-blocking, cached)
+function checkForUpdates(currentVersion: string): void {
+    let cachePath = getCachePath();
+
+    // Read cache
+    if (fs.existsSync(cachePath)) {
+        let content = "";
+        try {
+            content = fs.readFileSync(cachePath);
+        } catch (e) {
+            return;
+        }
+
+        let lines = content.split("\n");
+        if (lines.length >= 2) {
+            let cachedTimestamp = parseInteger(lines[0]);
+            let cachedVersion = lines[1].trim();
+
+            let now = getCurrentTimestamp();
+
+            // If cache is fresh (less than 24h), use it
+            if (now - cachedTimestamp < CHECK_INTERVAL) {
+                if (cachedVersion != "" && cachedVersion != currentVersion) {
+                    let cleanVersion = stripLeadingV(cachedVersion);
+                    if (compareVersions(currentVersion, cleanVersion) < 0) {
+                        console.log("A new version of Oite is available: " + cachedVersion + " (current: " + currentVersion + "). Run 'unroll upgrade' to update.");
+                        console.log("");
+                    }
+                }
+                return;
+            }
+        }
+    }
+
+    // Cache is stale or missing - fetch latest version
+    let latest = fetchLatestVersion();
+    if (latest == "") {
+        return;
+    }
+
+    // Save cache
+    let now = getCurrentTimestamp();
+    let cacheContent = "" + now + "\n" + latest + "\n";
+    let cacheDir = getUnrollDir();
+    if (!fs.existsSync(cacheDir)) {
+        fs.mkdirSync(cacheDir, { recursive: true });
+    }
+    try {
+        fs.writeFileSync(cachePath, cacheContent);
+    } catch (e) {
+        // Ignore write errors
+    }
+
+    // Compare and notify
+    let cleanLatest = stripLeadingV(latest);
+    if (cleanLatest != currentVersion && compareVersions(currentVersion, cleanLatest) < 0) {
+        console.log("A new version of Oite is available: " + latest + " (current: " + currentVersion + "). Run 'unroll upgrade' to update.");
+        console.log("");
+    }
+}
+
+function runUpgrade(args: string[]): number {
+    let options = parseUpgradeArgs(args);
+
+    console.log("Checking for updates...");
+
+    // Get current version
+    let currentResult = process.exec("oitec", ["--version"]);
+    let currentOitec = "unknown";
+    if (currentResult.exitCode == 0) {
+        currentOitec = currentResult.stdout.trim();
+    }
+
+    // Fetch latest version
+    let latestVersion = fetchLatestVersion();
+    if (latestVersion == "") {
+        console.error("Error: Could not fetch latest version from GitHub.");
+        console.error("Check your internet connection and try again.");
+        return 1;
+    }
+
+    console.log("Current oitec: " + currentOitec);
+    console.log("Latest release: " + latestVersion);
+    console.log("");
+
+    // Check if update is needed
+    if (!options.force) {
+        let cleanLatest = stripLeadingV(latestVersion);
+        if (currentOitec.indexOf(cleanLatest) >= 0) {
+            console.log("Already up to date!");
+            return 0;
+        }
+    }
+
+    // Detect platform
+    let target = detectPlatform();
+    if (target == "") {
+        console.error("Error: Could not detect platform.");
+        return 1;
+    }
+
+    console.log("Platform: " + target);
+    console.log("");
+
+    // Step 1: Download oitec
+    let oitecResult = downloadOitec(target, latestVersion);
+    if (!oitecResult) {
+        console.error("Error: Failed to download oitec.");
+        return 1;
+    }
+
+    // Step 2: Download unroll source
+    let unrollResult = downloadUnroll(latestVersion);
+    if (!unrollResult) {
+        console.error("Error: Failed to download unroll source.");
+        return 1;
+    }
+
+    // Step 3: Verify
+    console.log("");
+    console.log("Verifying installation...");
+
+    let verifyResult = process.exec("oitec", ["--version"]);
+    if (verifyResult.exitCode == 0) {
+        console.log("oitec: " + verifyResult.stdout.trim());
+    } else {
+        console.error("Warning: Could not verify oitec installation.");
+    }
+
+    // Step 4: Update version check cache
+    let now = getCurrentTimestamp();
+    let cachePath = getCachePath();
+    let cacheContent = "" + now + "\n" + latestVersion + "\n";
+    try {
+        fs.writeFileSync(cachePath, cacheContent);
+    } catch (e) {
+        // Ignore
+    }
+
+    console.log("");
+    console.log("Upgrade complete!");
+
+    return 0;
+}
+
+function detectPlatform(): string {
+    let osResult = process.exec("uname", ["-s"]);
+    if (osResult.exitCode != 0) {
+        return "";
+    }
+    let os = osResult.stdout.trim();
+
+    let archResult = process.exec("uname", ["-m"]);
+    if (archResult.exitCode != 0) {
+        return "";
+    }
+    let arch = archResult.stdout.trim();
+
+    // Map OS
+    let osTarget = "";
+    if (os == "Darwin") {
+        osTarget = "apple-darwin";
+    } else if (os == "Linux") {
+        osTarget = "unknown-linux-gnu";
+    } else {
+        console.error("Unsupported OS: " + os);
+        return "";
+    }
+
+    // Map architecture
+    let archTarget = "";
+    if (arch == "x86_64" || arch == "amd64") {
+        archTarget = "x86_64";
+    } else if (arch == "arm64" || arch == "aarch64") {
+        archTarget = "aarch64";
+    } else {
+        console.error("Unsupported architecture: " + arch);
+        return "";
+    }
+
+    return archTarget + "-" + osTarget;
+}
+
+function fetchLatestVersion(): string {
+    let result = process.exec("curl", ["-fsSL", GITHUB_API_URL]);
+    if (result.exitCode != 0) {
+        return "";
+    }
+
+    let response = result.stdout;
+
+    // Extract tag_name from JSON
+    let tagIndex = response.indexOf("\"tag_name\"");
+    if (tagIndex < 0) {
+        return "";
+    }
+
+    // Find the value after "tag_name": "
+    let colonIndex = response.indexOf(":", tagIndex);
+    if (colonIndex < 0) {
+        return "";
+    }
+
+    let quoteStart = response.indexOf("\"", colonIndex + 1);
+    if (quoteStart < 0) {
+        return "";
+    }
+
+    let quoteEnd = response.indexOf("\"", quoteStart + 1);
+    if (quoteEnd < 0) {
+        return "";
+    }
+
+    return response.substring(quoteStart + 1, quoteEnd);
+}
+
+function downloadOitec(target: string, version: string): boolean {
+    let home = getHome();
+    let binDir = home + "/.oite/bin";
+    let artifact = "oitec-" + target + ".tar.gz";
+    let url = "https://github.com/" + GITHUB_REPO + "/releases/download/" + version + "/" + artifact;
+    let tmpFile = "/tmp/oitec-upgrade-" + artifact;
+
+    console.log("Downloading oitec " + version + "...");
+
+    let downloadResult = process.exec("curl", ["-fSL", "--progress-bar", "-o", tmpFile, url]);
+    if (downloadResult.exitCode != 0) {
+        console.error("Failed to download: " + url);
+        return false;
+    }
+
+    // Ensure bin directory exists
+    if (!fs.existsSync(binDir)) {
+        fs.mkdirSync(binDir, { recursive: true });
+    }
+
+    console.log("Extracting oitec...");
+    let extractResult = process.exec("tar", ["-xzf", tmpFile, "-C", binDir]);
+    if (extractResult.exitCode != 0) {
+        console.error("Failed to extract oitec.");
+        cleanup(tmpFile);
+        return false;
+    }
+
+    // Make executable
+    process.exec("chmod", ["+x", binDir + "/oitec"]);
+
+    cleanup(tmpFile);
+
+    console.log("Installed oitec to " + binDir + "/oitec");
+    return true;
+}
+
+function downloadUnroll(version: string): boolean {
+    let home = getHome();
+    let libDir = home + "/.oite/lib/unroll";
+    let url = "https://github.com/" + GITHUB_REPO + "/releases/download/" + version + "/unroll-src.tar.gz";
+    let tmpFile = "/tmp/unroll-upgrade-src.tar.gz";
+
+    console.log("Downloading unroll...");
+
+    let downloadResult = process.exec("curl", ["-fSL", "--progress-bar", "-o", tmpFile, url]);
+    if (downloadResult.exitCode == 0) {
+        // Remove old source and extract new
+        if (fs.existsSync(libDir)) {
+            process.exec("rm", ["-rf", libDir]);
+        }
+        fs.mkdirSync(libDir, { recursive: true });
+
+        let extractResult = process.exec("tar", ["-xzf", tmpFile, "-C", libDir]);
+        if (extractResult.exitCode != 0) {
+            console.error("Failed to extract unroll source.");
+            cleanup(tmpFile);
+            return false;
+        }
+
+        cleanup(tmpFile);
+        console.log("Installed unroll to " + libDir);
+        return true;
+    }
+
+    // Fallback: clone from git
+    console.log("Release tarball not found, cloning from git...");
+    let cloneDir = "/tmp/unroll-upgrade-clone";
+    cleanup(cloneDir);
+
+    let cloneResult = process.exec("git", ["clone", "--depth", "1", "https://github.com/" + UNROLL_REPO + ".git", cloneDir]);
+    if (cloneResult.exitCode != 0) {
+        console.error("Failed to clone unroll repository.");
+        return false;
+    }
+
+    // Remove old and copy new
+    if (fs.existsSync(libDir)) {
+        process.exec("rm", ["-rf", libDir]);
+    }
+    fs.mkdirSync(libDir, { recursive: true });
+
+    let cpResult = process.exec("cp", ["-r", cloneDir + "/src", libDir + "/"]);
+    if (cpResult.exitCode != 0) {
+        console.error("Failed to copy unroll source.");
+        cleanup(cloneDir);
+        return false;
+    }
+
+    // Copy unroll.toml if exists
+    if (fs.existsSync(cloneDir + "/unroll.toml")) {
+        process.exec("cp", [cloneDir + "/unroll.toml", libDir + "/"]);
+    }
+
+    cleanup(cloneDir);
+    console.log("Installed unroll to " + libDir);
+    return true;
+}
+
+function cleanup(path: string): void {
+    process.exec("rm", ["-rf", path]);
+}
+
+// Version comparison: returns -1 if a < b, 0 if equal, 1 if a > b
+function compareVersions(a: string, b: string): number {
+    let cleanA = stripLeadingV(a);
+    let cleanB = stripLeadingV(b);
+
+    let partsA = cleanA.split(".");
+    let partsB = cleanB.split(".");
+
+    let maxLen = partsA.length;
+    if (partsB.length > maxLen) {
+        maxLen = partsB.length;
+    }
+
+    for (let i = 0; i < maxLen; i = i + 1) {
+        let numA = 0;
+        let numB = 0;
+
+        if (i < partsA.length) {
+            numA = parseInteger(partsA[i]);
+        }
+        if (i < partsB.length) {
+            numB = parseInteger(partsB[i]);
+        }
+
+        if (numA < numB) {
+            return -1;
+        }
+        if (numA > numB) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+function stripLeadingV(version: string): string {
+    if (version.length > 0 && (version[0] == "v" || version[0] == "V")) {
+        return version.substring(1);
+    }
+    return version;
+}
+
+function parseInteger(s: string): number {
+    let result = 0;
+    for (let i = 0; i < s.length; i = i + 1) {
+        let c = s[i];
+        if (c >= "0" && c <= "9") {
+            result = result * 10 + (c.charCodeAt(0) - 48);
+        }
+    }
+    return result;
+}
+
+function getCurrentTimestamp(): number {
+    let result = process.exec("date", ["+%s"]);
+    if (result.exitCode == 0) {
+        return parseInteger(result.stdout.trim());
+    }
+    return 0;
+}
+
+function getCachePath(): string {
+    return getUnrollDir() + "/last_version_check";
+}
+
+function getUnrollDir(): string {
+    let home = getHome();
+    return home + "/.unroll";
+}
+
+function getHome(): string {
+    let home = process.env.get("HOME");
+    if (home == undefined || home == "") {
+        home = process.env.get("USERPROFILE");
+    }
+    if (home == undefined) {
+        return "";
+    }
+    return home;
+}
+
+export { runUpgrade, checkForUpdates };
