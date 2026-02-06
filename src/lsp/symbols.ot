@@ -1,0 +1,424 @@
+// LSP Symbol Index
+// Regex-based symbol extraction from document content.
+// Maintains per-URI symbol lists for completions, hover, and go-to-definition.
+
+interface SymbolInfo {
+    name: string;
+    kind: string;     // "function", "class", "variable", "interface", "import", "type"
+    uri: string;
+    line: number;      // 0-indexed
+    column: number;    // 0-indexed
+    detail: string;    // Signature or type info for hover display
+}
+
+class SymbolIndex {
+    // Parallel arrays: symbolUris[i] has symbols symbolLists[i]
+    symbolUris: string[];
+    symbolLists: SymbolInfo[][];
+
+    constructor() {
+        this.symbolUris = [];
+        this.symbolLists = [];
+    }
+
+    /**
+     * Update symbols for a URI by re-parsing the content.
+     */
+    update(uri: string, content: string): void {
+        let symbols = parseSymbols(uri, content);
+        let idx = this.indexOfUri(uri);
+        if (idx >= 0) {
+            this.symbolLists[idx] = symbols;
+        } else {
+            this.symbolUris.push(uri);
+            this.symbolLists.push(symbols);
+        }
+    }
+
+    /**
+     * Remove symbols for a URI (document closed).
+     */
+    remove(uri: string): void {
+        let idx = this.indexOfUri(uri);
+        if (idx >= 0) {
+            this.symbolUris.splice(idx, 1);
+            this.symbolLists.splice(idx, 1);
+        }
+    }
+
+    /**
+     * Find all symbols matching a name across all documents.
+     */
+    findByName(name: string): SymbolInfo[] {
+        let results: SymbolInfo[] = [];
+        for (let i = 0; i < this.symbolLists.length; i = i + 1) {
+            let symbols = this.symbolLists[i];
+            for (let sym of symbols) {
+                if (sym.name == name) {
+                    results.push(sym);
+                }
+            }
+        }
+        return results;
+    }
+
+    /**
+     * Get all symbols across all documents.
+     */
+    getAll(): SymbolInfo[] {
+        let results: SymbolInfo[] = [];
+        for (let i = 0; i < this.symbolLists.length; i = i + 1) {
+            let symbols = this.symbolLists[i];
+            for (let sym of symbols) {
+                results.push(sym);
+            }
+        }
+        return results;
+    }
+
+    /**
+     * Get symbols for a specific URI.
+     */
+    getForUri(uri: string): SymbolInfo[] {
+        let idx = this.indexOfUri(uri);
+        if (idx >= 0) {
+            return this.symbolLists[idx];
+        }
+        return [];
+    }
+
+    indexOfUri(uri: string): number {
+        for (let i = 0; i < this.symbolUris.length; i = i + 1) {
+            if (this.symbolUris[i] == uri) {
+                return i;
+            }
+        }
+        return -1;
+    }
+}
+
+/**
+ * Parse symbols from document content.
+ * Uses line-by-line scanning with string matching patterns.
+ */
+function parseSymbols(uri: string, content: string): SymbolInfo[] {
+    let symbols: SymbolInfo[] = [];
+    let lines = content.split("\n");
+
+    for (let lineNum = 0; lineNum < lines.length; lineNum = lineNum + 1) {
+        let line = lines[lineNum];
+        let trimmed = line.trim();
+
+        // Skip empty lines and comments
+        if (trimmed == "" || trimmed.startsWith("//") || trimmed.startsWith("/*")) {
+            continue;
+        }
+
+        // export function NAME( or function NAME(
+        let funcSymbol = parseFunctionDecl(trimmed, uri, lineNum);
+        if (funcSymbol != null) {
+            symbols.push(funcSymbol);
+            continue;
+        }
+
+        // export class NAME or class NAME
+        let classSymbol = parseClassDecl(trimmed, uri, lineNum);
+        if (classSymbol != null) {
+            symbols.push(classSymbol);
+            continue;
+        }
+
+        // export interface NAME or interface NAME
+        let ifaceSymbol = parseInterfaceDecl(trimmed, uri, lineNum);
+        if (ifaceSymbol != null) {
+            symbols.push(ifaceSymbol);
+            continue;
+        }
+
+        // let NAME = or const NAME =
+        let varSymbol = parseVariableDecl(trimmed, uri, lineNum);
+        if (varSymbol != null) {
+            symbols.push(varSymbol);
+            continue;
+        }
+
+        // type NAME =
+        let typeSymbol = parseTypeDecl(trimmed, uri, lineNum);
+        if (typeSymbol != null) {
+            symbols.push(typeSymbol);
+            continue;
+        }
+
+        // import { ... } from "..."
+        let importSymbols = parseImportDecl(trimmed, uri, lineNum);
+        for (let sym of importSymbols) {
+            symbols.push(sym);
+        }
+    }
+
+    return symbols;
+}
+
+function parseFunctionDecl(line: string, uri: string, lineNum: number): SymbolInfo | null {
+    let rest = line;
+
+    // Strip 'export' prefix
+    if (rest.startsWith("export ")) {
+        rest = rest.substring(7).trim();
+    }
+
+    // Match 'function NAME' or 'async function NAME'
+    if (rest.startsWith("async ")) {
+        rest = rest.substring(6).trim();
+    }
+
+    if (!rest.startsWith("function ")) {
+        return null;
+    }
+    rest = rest.substring(9).trim();
+
+    // Extract function name (until '(' or '<' or space)
+    let name = extractIdentifier(rest);
+    if (name == "") return null;
+
+    // Extract signature detail (everything up to '{' or end)
+    let detail = "function " + name;
+    let parenIdx = line.indexOf("(");
+    if (parenIdx >= 0) {
+        let endIdx = line.indexOf("{");
+        if (endIdx < 0) endIdx = line.length;
+        detail = line.substring(parenIdx - name.length - 9, endIdx).trim();
+        if (detail.startsWith("export ")) detail = detail.substring(7).trim();
+    }
+
+    return {
+        name: name,
+        kind: "function",
+        uri: uri,
+        line: lineNum,
+        column: line.indexOf(name),
+        detail: detail
+    };
+}
+
+function parseClassDecl(line: string, uri: string, lineNum: number): SymbolInfo | null {
+    let rest = line;
+    if (rest.startsWith("export ")) {
+        rest = rest.substring(7).trim();
+    }
+
+    if (!rest.startsWith("class ")) {
+        return null;
+    }
+    rest = rest.substring(6).trim();
+
+    let name = extractIdentifier(rest);
+    if (name == "") return null;
+
+    let detail = "class " + name;
+    let extendsIdx = rest.indexOf(" extends ");
+    if (extendsIdx >= 0) {
+        let parentName = extractIdentifier(rest.substring(extendsIdx + 9).trim());
+        detail = detail + " extends " + parentName;
+    }
+
+    return {
+        name: name,
+        kind: "class",
+        uri: uri,
+        line: lineNum,
+        column: line.indexOf(name),
+        detail: detail
+    };
+}
+
+function parseInterfaceDecl(line: string, uri: string, lineNum: number): SymbolInfo | null {
+    let rest = line;
+    if (rest.startsWith("export ")) {
+        rest = rest.substring(7).trim();
+    }
+
+    if (!rest.startsWith("interface ")) {
+        return null;
+    }
+    rest = rest.substring(10).trim();
+
+    let name = extractIdentifier(rest);
+    if (name == "") return null;
+
+    return {
+        name: name,
+        kind: "interface",
+        uri: uri,
+        line: lineNum,
+        column: line.indexOf(name),
+        detail: "interface " + name
+    };
+}
+
+function parseVariableDecl(line: string, uri: string, lineNum: number): SymbolInfo | null {
+    let rest = line;
+    if (rest.startsWith("export ")) {
+        rest = rest.substring(7).trim();
+    }
+
+    let keyword = "";
+    if (rest.startsWith("let ")) {
+        keyword = "let";
+        rest = rest.substring(4).trim();
+    } else if (rest.startsWith("const ")) {
+        keyword = "const";
+        rest = rest.substring(6).trim();
+    } else {
+        return null;
+    }
+
+    let name = extractIdentifier(rest);
+    if (name == "") return null;
+
+    // Only include if it's a declaration (has = or :)
+    let afterName = rest.substring(name.length).trim();
+    if (!afterName.startsWith("=") && !afterName.startsWith(":")) {
+        return null;
+    }
+
+    let detail = keyword + " " + name;
+    // Try to get type annotation
+    if (afterName.startsWith(":")) {
+        let eqIdx = afterName.indexOf("=");
+        if (eqIdx > 0) {
+            detail = detail + afterName.substring(0, eqIdx).trim();
+        } else {
+            detail = detail + afterName;
+        }
+    }
+
+    return {
+        name: name,
+        kind: "variable",
+        uri: uri,
+        line: lineNum,
+        column: line.indexOf(name),
+        detail: detail
+    };
+}
+
+function parseTypeDecl(line: string, uri: string, lineNum: number): SymbolInfo | null {
+    let rest = line;
+    if (rest.startsWith("export ")) {
+        rest = rest.substring(7).trim();
+    }
+
+    if (!rest.startsWith("type ")) {
+        return null;
+    }
+    rest = rest.substring(5).trim();
+
+    let name = extractIdentifier(rest);
+    if (name == "") return null;
+
+    return {
+        name: name,
+        kind: "type",
+        uri: uri,
+        line: lineNum,
+        column: line.indexOf(name),
+        detail: "type " + name
+    };
+}
+
+function parseImportDecl(line: string, uri: string, lineNum: number): SymbolInfo[] {
+    let symbols: SymbolInfo[] = [];
+
+    if (!line.startsWith("import ")) {
+        return symbols;
+    }
+
+    // Extract names from: import { a, b, c } from "..."
+    let braceStart = line.indexOf("{");
+    let braceEnd = line.indexOf("}");
+
+    if (braceStart >= 0 && braceEnd > braceStart) {
+        let namesStr = line.substring(braceStart + 1, braceEnd);
+        let names = namesStr.split(",");
+        for (let name of names) {
+            let trimmedName = name.trim();
+            // Handle "x as y" imports
+            let asIdx = trimmedName.indexOf(" as ");
+            if (asIdx >= 0) {
+                trimmedName = trimmedName.substring(asIdx + 4).trim();
+            }
+            if (trimmedName != "") {
+                symbols.push({
+                    name: trimmedName,
+                    kind: "import",
+                    uri: uri,
+                    line: lineNum,
+                    column: line.indexOf(trimmedName),
+                    detail: line.trim()
+                });
+            }
+        }
+    }
+
+    return symbols;
+}
+
+/**
+ * Extract an identifier (word) from the start of a string.
+ */
+function extractIdentifier(s: string): string {
+    let result = "";
+    for (let i = 0; i < s.length; i = i + 1) {
+        let c = s[i];
+        if ((c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || c == "_" || c == "$") {
+            result = result + c;
+        } else if (result.length > 0 && c >= "0" && c <= "9") {
+            result = result + c;
+        } else {
+            break;
+        }
+    }
+    return result;
+}
+
+/**
+ * Extract the word at a given position in a document.
+ */
+function getWordAtPosition(content: string, line: number, character: number): string {
+    let lines = content.split("\n");
+    if (line < 0 || line >= lines.length) {
+        return "";
+    }
+
+    let lineText = lines[line];
+    if (character < 0 || character >= lineText.length) {
+        return "";
+    }
+
+    // Find word boundaries
+    let start = character;
+    while (start > 0) {
+        let c = lineText[start - 1];
+        if ((c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || c == "_" || c == "$" || (c >= "0" && c <= "9")) {
+            start = start - 1;
+        } else {
+            break;
+        }
+    }
+
+    let end = character;
+    while (end < lineText.length) {
+        let c = lineText[end];
+        if ((c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || c == "_" || c == "$" || (c >= "0" && c <= "9")) {
+            end = end + 1;
+        } else {
+            break;
+        }
+    }
+
+    if (start == end) return "";
+    return lineText.substring(start, end);
+}
+
+export { SymbolIndex, SymbolInfo, getWordAtPosition };

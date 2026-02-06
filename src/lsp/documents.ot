@@ -1,0 +1,149 @@
+// LSP Document Store
+// Tracks contents of open documents. Uses parallel arrays (no Map in oitec).
+
+class DocumentStore {
+    uris: string[];
+    contents: string[];
+    versions: number[];
+
+    constructor() {
+        this.uris = [];
+        this.contents = [];
+        this.versions = [];
+    }
+
+    /**
+     * Find index of a URI, or -1 if not found.
+     */
+    indexOf(uri: string): number {
+        for (let i = 0; i < this.uris.length; i = i + 1) {
+            if (this.uris[i] == uri) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Open a document (didOpen).
+     */
+    open(uri: string, text: string, version: number): void {
+        let idx = this.indexOf(uri);
+        if (idx >= 0) {
+            // Already open, update
+            this.contents[idx] = text;
+            this.versions[idx] = version;
+        } else {
+            this.uris.push(uri);
+            this.contents.push(text);
+            this.versions.push(version);
+        }
+    }
+
+    /**
+     * Update document content (didChange with full sync).
+     */
+    change(uri: string, text: string, version: number): void {
+        let idx = this.indexOf(uri);
+        if (idx >= 0) {
+            this.contents[idx] = text;
+            this.versions[idx] = version;
+        }
+    }
+
+    /**
+     * Close a document (didClose).
+     */
+    close(uri: string): void {
+        let idx = this.indexOf(uri);
+        if (idx >= 0) {
+            this.uris.splice(idx, 1);
+            this.contents.splice(idx, 1);
+            this.versions.splice(idx, 1);
+        }
+    }
+
+    /**
+     * Get document content by URI, or null if not open.
+     */
+    get(uri: string): string | null {
+        let idx = this.indexOf(uri);
+        if (idx >= 0) {
+            return this.contents[idx];
+        }
+        return null;
+    }
+
+    /**
+     * Get all open document URIs.
+     */
+    getAllUris(): string[] {
+        let result: string[] = [];
+        for (let uri of this.uris) {
+            result.push(uri);
+        }
+        return result;
+    }
+}
+
+/**
+ * Convert a file:// URI to a local file path.
+ */
+function uriToPath(uri: string): string {
+    if (uri.startsWith("file://")) {
+        let path = uri.substring(7);
+        // Decode percent-encoded characters
+        path = decodeURIComponent(path);
+        return path;
+    }
+    return uri;
+}
+
+/**
+ * Convert a local file path to a file:// URI.
+ */
+function pathToUri(path: string): string {
+    if (path.startsWith("file://")) {
+        return path;
+    }
+    return "file://" + path;
+}
+
+function decodeURIComponent(str: string): string {
+    let result = "";
+    let i = 0;
+    while (i < str.length) {
+        let c = str[i];
+        if (c == "%" && i + 2 < str.length) {
+            let hex = str.substring(i + 1, i + 3);
+            let code = hexToInt(hex);
+            if (code >= 0) {
+                result = result + String.fromCharCode(code);
+                i = i + 3;
+                continue;
+            }
+        }
+        result = result + c;
+        i = i + 1;
+    }
+    return result;
+}
+
+function hexToInt(hex: string): number {
+    let result = 0;
+    for (let i = 0; i < hex.length; i = i + 1) {
+        let c = hex[i].toLowerCase();
+        let digit = 0;
+        if (c >= "0" && c <= "9") {
+            digit = c.charCodeAt(0) - 48;
+        } else if (c >= "a" && c <= "f") {
+            digit = c.charCodeAt(0) - 87;
+        } else {
+            return -1;
+        }
+        result = result * 16 + digit;
+    }
+    return result;
+}
+
+export { DocumentStore, uriToPath, pathToUri };

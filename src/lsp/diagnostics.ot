@@ -1,0 +1,245 @@
+// LSP Diagnostics
+// Runs `oitec check` on documents and publishes diagnostic notifications.
+
+import { sendNotification } from "./transport.ot";
+import { uriToPath } from "./documents.ot";
+
+// LSP DiagnosticSeverity constants
+const SEVERITY_ERROR = 1;
+const SEVERITY_WARNING = 2;
+const SEVERITY_INFO = 3;
+const SEVERITY_HINT = 4;
+
+/**
+ * Run diagnostics on a document and publish results via LSP notification.
+ */
+function publishDiagnostics(uri: string, content: string): void {
+    let filePath = uriToPath(uri);
+
+    // Determine file extension for temp file
+    let ext = ".ot";
+    if (filePath.endsWith(".ts") || filePath.endsWith(".tsx")) {
+        ext = filePath.substring(filePath.lastIndexOf("."));
+    } else if (filePath.endsWith(".js") || filePath.endsWith(".jsx")) {
+        ext = filePath.substring(filePath.lastIndexOf("."));
+    }
+
+    // Write content to temp file for oitec check
+    let tmpFile = "/tmp/oite-lsp-check" + ext;
+    fs.writeFileSync(tmpFile, content);
+
+    // Find oitec binary
+    let oitecPath = findOitec();
+    if (oitecPath == "") {
+        // Can't find oitec, skip diagnostics
+        return;
+    }
+
+    // Run oitec check
+    let result = process.exec(oitecPath, ["check", tmpFile]);
+
+    // Parse diagnostics from stderr output
+    let diagnostics: any[] = [];
+    let stderr = result.stderr;
+
+    if (stderr != "" && result.exitCode != 0) {
+        let parsed = parseDiagnosticOutput(stderr, tmpFile);
+        for (let diag of parsed) {
+            diagnostics.push(diag);
+        }
+    }
+
+    // Clean up temp file
+    if (fs.existsSync(tmpFile)) {
+        // Best effort cleanup
+        fs.writeFileSync(tmpFile, "");
+    }
+
+    // Send diagnostics notification
+    sendNotification("textDocument/publishDiagnostics", {
+        uri: uri,
+        diagnostics: diagnostics
+    });
+}
+
+/**
+ * Parse oitec check output into LSP diagnostic objects.
+ * Expected format: filename:line:col: message
+ */
+function parseDiagnosticOutput(output: string, tmpFile: string): any[] {
+    let diagnostics: any[] = [];
+    let lines = output.split("\n");
+
+    for (let line of lines) {
+        if (line.trim() == "") continue;
+
+        let diag = parseSingleDiagnostic(line, tmpFile);
+        if (diag != null) {
+            diagnostics.push(diag);
+        }
+    }
+
+    // If no structured diagnostics found, create a generic one from the full output
+    if (diagnostics.length == 0 && output.trim() != "") {
+        diagnostics.push({
+            range: {
+                start: { line: 0, character: 0 },
+                end: { line: 0, character: 0 }
+            },
+            severity: SEVERITY_ERROR,
+            source: "oitec",
+            message: output.trim()
+        });
+    }
+
+    return diagnostics;
+}
+
+/**
+ * Parse a single diagnostic line.
+ * Format: filename:line:col: message
+ */
+function parseSingleDiagnostic(line: string, tmpFile: string): any {
+    // Try to match pattern: filename:line:col: message
+    // The filename might be the temp file path
+
+    let restLine = line;
+
+    // Strip the temp filename prefix if present
+    if (restLine.startsWith(tmpFile + ":")) {
+        restLine = restLine.substring(tmpFile.length + 1);
+    } else {
+        // Try to find first `:` after what looks like a path
+        let colonIdx = findDiagnosticColon(restLine);
+        if (colonIdx > 0) {
+            restLine = restLine.substring(colonIdx + 1);
+        }
+    }
+
+    // Now try to parse line:col: message
+    let lineNum = 0;
+    let colNum = 0;
+    let message = restLine;
+
+    // Extract line number
+    let idx = 0;
+    let numStr = "";
+    while (idx < restLine.length && restLine[idx] >= "0" && restLine[idx] <= "9") {
+        numStr = numStr + restLine[idx];
+        idx = idx + 1;
+    }
+
+    if (numStr != "" && idx < restLine.length && restLine[idx] == ":") {
+        lineNum = parseIntSimple(numStr);
+        idx = idx + 1;
+
+        // Extract column number
+        let colStr = "";
+        while (idx < restLine.length && restLine[idx] >= "0" && restLine[idx] <= "9") {
+            colStr = colStr + restLine[idx];
+            idx = idx + 1;
+        }
+
+        if (colStr != "") {
+            colNum = parseIntSimple(colStr);
+        }
+
+        // Skip ": " separator
+        if (idx < restLine.length && restLine[idx] == ":") {
+            idx = idx + 1;
+        }
+        if (idx < restLine.length && restLine[idx] == " ") {
+            idx = idx + 1;
+        }
+
+        message = restLine.substring(idx);
+    }
+
+    if (message.trim() == "") {
+        return null;
+    }
+
+    // Determine severity from message content
+    let severity = SEVERITY_ERROR;
+    let lowerMsg = message.toLowerCase();
+    if (lowerMsg.startsWith("warning") || lowerMsg.indexOf("warning") >= 0) {
+        severity = SEVERITY_WARNING;
+    }
+
+    // LSP lines are 0-indexed, oitec uses 1-indexed
+    let lspLine = lineNum > 0 ? lineNum - 1 : 0;
+    let lspCol = colNum > 0 ? colNum - 1 : 0;
+
+    return {
+        range: {
+            start: { line: lspLine, character: lspCol },
+            end: { line: lspLine, character: lspCol }
+        },
+        severity: severity,
+        source: "oitec",
+        message: message
+    };
+}
+
+/**
+ * Find the colon after a filename in a diagnostic line.
+ * Skips over drive letters on Windows (C:\...).
+ */
+function findDiagnosticColon(line: string): number {
+    // Find first colon followed by a digit (line:col pattern)
+    for (let i = 1; i < line.length; i = i + 1) {
+        if (line[i] == ":") {
+            if (i + 1 < line.length && line[i + 1] >= "0" && line[i + 1] <= "9") {
+                return i;
+            }
+        }
+    }
+    return -1;
+}
+
+function parseIntSimple(s: string): number {
+    let result = 0;
+    for (let i = 0; i < s.length; i = i + 1) {
+        let c = s[i];
+        if (c >= "0" && c <= "9") {
+            result = result * 10 + (c.charCodeAt(0) - 48);
+        } else {
+            break;
+        }
+    }
+    return result;
+}
+
+/**
+ * Find the oitec binary path.
+ */
+function findOitec(): string {
+    // Try common locations
+    let home = process.env.get("HOME");
+    if (home == undefined) home = "";
+
+    let candidates: string[] = [
+        home + "/.oite/bin/oitec",
+        "/usr/local/bin/oitec",
+        "/usr/bin/oitec"
+    ];
+
+    for (let path of candidates) {
+        if (fs.existsSync(path)) {
+            return path;
+        }
+    }
+
+    // Try using which via process.exec
+    let result = process.exec("which", ["oitec"]);
+    if (result.exitCode == 0) {
+        let path = result.stdout.trim();
+        if (path != "") {
+            return path;
+        }
+    }
+
+    return "";
+}
+
+export { publishDiagnostics };

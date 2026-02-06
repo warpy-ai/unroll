@@ -1,0 +1,186 @@
+// LSP Server for Oite
+// Main entry point, message dispatch loop, and lifecycle management.
+
+import { readMessage, sendResponse, sendError, sendNotification } from "./transport.ot";
+import { parseJson, jsonStringify } from "./json.ot";
+import { DocumentStore, uriToPath } from "./documents.ot";
+import { publishDiagnostics } from "./diagnostics.ot";
+import { SymbolIndex } from "./symbols.ot";
+import { handleCompletion } from "./completion.ot";
+import { handleHover } from "./hover.ot";
+import { handleDefinition } from "./definition.ot";
+
+/**
+ * Run the LSP server. Blocks reading from stdin until shutdown/EOF.
+ */
+function runLsp(args: string[]): number {
+    let documents = new DocumentStore();
+    let symbols = new SymbolIndex();
+    let initialized = false;
+    let shutdownRequested = false;
+
+    // Log to stderr (stdout is reserved for LSP protocol)
+    console.error("Oite LSP server starting...");
+
+    // Main message loop
+    while (true) {
+        let message = readMessage();
+        if (message == null) {
+            break; // EOF — client disconnected
+        }
+
+        let msg = parseJson(message);
+        if (msg == null) {
+            continue;
+        }
+
+        let method = msg.method;
+        let id = msg.id; // null for notifications
+        let params = msg.params;
+
+        // Lifecycle
+        if (method == "initialize") {
+            handleInitialize(id, params);
+            continue;
+        }
+
+        if (method == "initialized") {
+            initialized = true;
+            console.error("Oite LSP server initialized");
+            continue;
+        }
+
+        if (method == "shutdown") {
+            shutdownRequested = true;
+            sendResponse(id, null);
+            continue;
+        }
+
+        if (method == "exit") {
+            if (shutdownRequested) {
+                return 0;
+            }
+            return 1;
+        }
+
+        // Document synchronization
+        if (method == "textDocument/didOpen") {
+            handleDidOpen(params, documents, symbols);
+            continue;
+        }
+
+        if (method == "textDocument/didChange") {
+            handleDidChange(params, documents, symbols);
+            continue;
+        }
+
+        if (method == "textDocument/didClose") {
+            handleDidClose(params, documents, symbols);
+            continue;
+        }
+
+        if (method == "textDocument/didSave") {
+            handleDidSave(params, documents, symbols);
+            continue;
+        }
+
+        // Language features (requests — need response)
+        if (method == "textDocument/completion") {
+            handleCompletion(id, params, documents, symbols);
+            continue;
+        }
+
+        if (method == "textDocument/hover") {
+            handleHover(id, params, documents, symbols);
+            continue;
+        }
+
+        if (method == "textDocument/definition") {
+            handleDefinition(id, params, documents, symbols);
+            continue;
+        }
+
+        // Unknown request — respond with method not found
+        if (id != null) {
+            sendError(id, -32601, "Method not found: " + method);
+        }
+    }
+
+    return 0;
+}
+
+// ============================================================================
+// Lifecycle Handlers
+// ============================================================================
+
+function handleInitialize(id: any, params: any): void {
+    let result: any = {
+        capabilities: {
+            textDocumentSync: 1, // Full document sync
+            completionProvider: {
+                triggerCharacters: [".", "@", "/"],
+                resolveProvider: false
+            },
+            hoverProvider: true,
+            definitionProvider: true
+        },
+        serverInfo: {
+            name: "oite-lsp",
+            version: "0.1.0"
+        }
+    };
+
+    sendResponse(id, result);
+}
+
+// ============================================================================
+// Document Sync Handlers
+// ============================================================================
+
+function handleDidOpen(params: any, documents: DocumentStore, symbols: SymbolIndex): void {
+    let td = params.textDocument;
+    let uri = td.uri;
+    let text = td.text;
+    let version = td.version;
+
+    documents.open(uri, text, version);
+    symbols.update(uri, text);
+    publishDiagnostics(uri, text);
+}
+
+function handleDidChange(params: any, documents: DocumentStore, symbols: SymbolIndex): void {
+    let td = params.textDocument;
+    let uri = td.uri;
+    let version = td.version;
+
+    // Full document sync — contentChanges[0].text has full content
+    let changes = params.contentChanges;
+    if (changes.length > 0) {
+        let text = changes[0].text;
+        documents.change(uri, text, version);
+        symbols.update(uri, text);
+        publishDiagnostics(uri, text);
+    }
+}
+
+function handleDidClose(params: any, documents: DocumentStore, symbols: SymbolIndex): void {
+    let uri = params.textDocument.uri;
+    documents.close(uri);
+    symbols.remove(uri);
+
+    // Clear diagnostics for closed document
+    sendNotification("textDocument/publishDiagnostics", {
+        uri: uri,
+        diagnostics: []
+    });
+}
+
+function handleDidSave(params: any, documents: DocumentStore, symbols: SymbolIndex): void {
+    let uri = params.textDocument.uri;
+    let text = documents.get(uri);
+    if (text != null) {
+        publishDiagnostics(uri, text);
+    }
+}
+
+export { runLsp };
