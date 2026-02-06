@@ -242,7 +242,8 @@ function parsePublishArgs(args: string[]): PublishOptions {
         dryRun: false
     };
 
-    for (let arg of args) {
+    for (let i = 0; i < args.length; i = i + 1) {
+        let arg = args[i];
         if (arg == "--dry-run" || arg == "-n") {
             options.dryRun = true;
         }
@@ -254,9 +255,13 @@ function parsePublishArgs(args: string[]): PublishOptions {
 function runPublish(args: string[]): number {
     let options = parsePublishArgs(args);
 
-    let manifest = loadManifest("./unroll.toml");
+    // Try roll.toml first (library), then unroll.toml (project)
+    let manifest = loadManifest("./roll.toml");
     if (manifest == null) {
-        console.error("Error: could not find unroll.toml");
+        manifest = loadManifest("./unroll.toml");
+    }
+    if (manifest == null) {
+        console.error("Error: could not find roll.toml or unroll.toml");
         return 1;
     }
 
@@ -325,23 +330,27 @@ function uploadTarball(tarballPath: string, registryUrl: string, token: string):
         return { success: false, error: "Upload failed: " + curlResult.stderr };
     }
 
-    let response = parseJson(curlResult.stdout);
-    if (response == null) {
-        return { success: false, error: "Invalid response from registry: " + curlResult.stdout };
-    }
+    let responseText = curlResult.stdout;
 
-    if (response.success) {
+    // Check for success response
+    if (responseText.indexOf("\"success\":true") >= 0) {
         return { success: true, error: "" };
     }
 
-    if (response.errors && response.errors.length > 0) {
-        return { success: false, error: response.errors[0].detail };
-    }
-    if (response.error) {
-        return { success: false, error: response.error };
+    // Check for error response
+    if (responseText.indexOf("\"errors\"") >= 0) {
+        // Extract error detail
+        let detailStart = responseText.indexOf("\"detail\":\"");
+        if (detailStart >= 0) {
+            detailStart = detailStart + 10;
+            let detailEnd = responseText.indexOf("\"", detailStart);
+            if (detailEnd > detailStart) {
+                return { success: false, error: responseText.substring(detailStart, detailEnd) };
+            }
+        }
     }
 
-    return { success: false, error: "Unknown error: " + curlResult.stdout };
+    return { success: false, error: "Registry error: " + responseText };
 }
 
 interface TarballResult {
@@ -350,9 +359,13 @@ interface TarballResult {
 }
 
 function createTarball(dir: string): TarballResult {
-    let manifest = loadManifest(dir + "/unroll.toml");
+    // Try roll.toml first (library), then unroll.toml (project)
+    let manifest = loadManifest(dir + "/roll.toml");
     if (manifest == null) {
-        return { data: "", error: "Could not load unroll.toml" };
+        manifest = loadManifest(dir + "/unroll.toml");
+    }
+    if (manifest == null) {
+        return { data: "", error: "Could not load roll.toml or unroll.toml" };
     }
 
     if (manifest.name.indexOf("@") != 0) {
@@ -691,6 +704,11 @@ function startDeviceAuth(baseUrl: string): DeviceAuthResult {
     result.verificationUri = extractJsonString(response, "verification_uri");
     result.expiresIn = extractJsonNumber(response, "expires_in", 600);
     result.interval = extractJsonNumber(response, "interval", 5);
+
+    // Handle relative verification_uri - prepend base URL if needed
+    if (result.verificationUri != "" && result.verificationUri[0] == "/") {
+        result.verificationUri = baseUrl + result.verificationUri;
+    }
 
     if (result.deviceCode == "" || result.verificationUri == "") {
         result.error = "Invalid device authorization response";

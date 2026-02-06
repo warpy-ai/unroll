@@ -124,52 +124,52 @@ function parseToml(content: string): Manifest {
 
     let lines = content.split("\n");
     let currentSection = "";
+    let i = 0;
 
-    for (let line of lines) {
-        line = line.trim();
+    while (i < lines.length) {
+        let line = lines[i].trim();
+        i = i + 1;
 
         // Skip empty lines and comments
         if (line == "" || line[0] == "#") {
-            continue;
-        }
-
-        // Section header
-        if (line[0] == "[") {
+            // Skip - do nothing
+        } else if (line[0] == "[") {
+            // Section header
             let end = line.indexOf("]");
             if (end > 0) {
                 currentSection = line.substring(1, end);
             }
-            continue;
-        }
+        } else {
+            // Key-value pair
+            let eqIndex = line.indexOf("=");
+            if (eqIndex > 0) {
+                let key = line.substring(0, eqIndex).trim();
+                let value = line.substring(eqIndex + 1).trim();
 
-        // Key-value pair
-        let eqIndex = line.indexOf("=");
-        if (eqIndex > 0) {
-            let key = line.substring(0, eqIndex).trim();
-            let value = line.substring(eqIndex + 1).trim();
+                // Remove quotes from string values
+                if (value[0] == "\"" && value[value.length - 1] == "\"") {
+                    value = value.substring(1, value.length - 1);
+                }
 
-            // Remove quotes from string values
-            if (value[0] == "\"" && value[value.length - 1] == "\"") {
-                value = value.substring(1, value.length - 1);
-            }
-
-            // Apply to appropriate section
-            if (currentSection == "package") {
-                if (key == "name") manifest.name = value;
-                else if (key == "version") manifest.version = value;
-                else if (key == "edition") manifest.edition = value;
-                else if (key == "license") manifest.license = value;
-                else if (key == "description") manifest.description = value;
-                else if (key == "repository") manifest.repository = value;
-                else if (key == "no-std") manifest.noStd = value == "true";
-            } else if (currentSection == "dependencies") {
-                manifest.dependencies.push(parseDependency(key, value));
-            } else if (currentSection == "dev-dependencies") {
-                manifest.devDependencies.push(parseDependency(key, value));
-            } else if (currentSection == "build") {
-                if (key == "target") manifest.build.target = value;
-                else if (key == "optimization") manifest.build.optimization = value;
-                else if (key == "lto") manifest.build.lto = value == "true";
+                // Apply to appropriate section
+                // Support both [package] (unroll.toml) and [roll] (roll.toml)
+                if (currentSection == "package" || currentSection == "roll") {
+                    if (key == "name") manifest.name = value;
+                    else if (key == "version") manifest.version = value;
+                    else if (key == "edition") manifest.edition = value;
+                    else if (key == "license") manifest.license = value;
+                    else if (key == "description") manifest.description = value;
+                    else if (key == "repository") manifest.repository = value;
+                    else if (key == "no-std") manifest.noStd = value == "true";
+                } else if (currentSection == "dependencies") {
+                    manifest.dependencies.push(parseDependency(key, value));
+                } else if (currentSection == "dev-dependencies") {
+                    manifest.devDependencies.push(parseDependency(key, value));
+                } else if (currentSection == "build") {
+                    if (key == "target") manifest.build.target = value;
+                    else if (key == "optimization") manifest.build.optimization = value;
+                    else if (key == "lto") manifest.build.lto = value == "true";
+                }
             }
         }
     }
