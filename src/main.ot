@@ -12,6 +12,7 @@ import { runLint } from "./cli/lint.ot";
 import { runCheck } from "./cli/check.ot";
 import { runDoc } from "./cli/doc.ot";
 import { runSearch, runInfo, runPublish, runYank, runLogin, runLogout } from "./cli/registry.ot";
+import { runUpgrade, checkForUpdates } from "./cli/upgrade.ot";
 
 const VERSION = "0.1.0";
 
@@ -30,6 +31,9 @@ function main(args: string[]): number {
 
     let command = parsed.command;
     let cmdArgs = parsed.args;
+
+    // Check for updates (non-blocking, cached)
+    checkForUpdates(VERSION);
 
     // Project management
     if (command == "new") {
@@ -101,6 +105,11 @@ function main(args: string[]): number {
     }
     if (command == "logout") {
         return runLogout(cmdArgs);
+    }
+
+    // Toolchain
+    if (command == "upgrade") {
+        return runUpgrade(cmdArgs);
     }
 
     // Unknown command
