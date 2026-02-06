@@ -31,15 +31,15 @@ function handleDefinition(id: any, params: any, documents: DocumentStore, symbol
         let locations: any[] = [];
         for (let sym of matches) {
             // Skip import symbols — we want the actual definition
-            if (sym.kind == "import") continue;
-
-            locations.push({
-                uri: sym.uri,
-                range: {
-                    start: { line: sym.line, character: sym.column },
-                    end: { line: sym.line, character: sym.column + sym.name.length }
-                }
-            });
+            if (sym.kind != "import") {
+                locations.push({
+                    uri: sym.uri,
+                    range: {
+                        start: { line: sym.line, character: sym.column },
+                        end: { line: sym.line, character: sym.column + sym.name.length }
+                    }
+                });
+            }
         }
 
         // If we filtered all results (only imports), include them as fallback
@@ -70,7 +70,6 @@ function handleDefinition(id: any, params: any, documents: DocumentStore, symbol
         return;
     }
 
-    // No definition found
     sendResponse(id, null);
 }
 

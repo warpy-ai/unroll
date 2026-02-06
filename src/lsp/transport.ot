@@ -2,6 +2,8 @@
 // Handles JSON-RPC messages over stdin/stdout using the LSP protocol format:
 // Content-Length: <length>\r\n\r\n<json body>
 
+import { jsonStringify } from "./json.ot";
+
 /**
  * Read a single LSP message from stdin.
  * Returns the JSON body string, or null on EOF/error.
