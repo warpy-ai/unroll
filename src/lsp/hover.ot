@@ -54,11 +54,26 @@ function buildSymbolHover(symbolMatches: any[]): any {
 
     for (let sym of symbolMatches) {
         let kindLabel = sym.kind;
-        if (kindLabel == "function") kindLabel = "function";
-        else if (kindLabel == "class") kindLabel = "class";
-        else if (kindLabel == "interface") kindLabel = "interface";
-        else if (kindLabel == "variable") kindLabel = "variable";
-        else if (kindLabel == "type") kindLabel = "type";
+
+        switch (kindLabel) {
+            case "function":
+                kindLabel = "function";
+                break;
+            case "class":
+                kindLabel = "class";
+                break;
+            case "interface":
+                kindLabel = "interface";
+                break;
+            case "variable":
+                kindLabel = "variable";
+                break;
+            case "type":
+                kindLabel = "type";
+                break;
+            default:
+                kindLabel = sym.kind; // Fallback to original kind if not recognized
+        }
 
         parts.push("**" + kindLabel + "** `" + sym.name + "`");
         if (sym.detail != "") {
@@ -77,18 +92,44 @@ function buildSymbolHover(symbolMatches: any[]): any {
 function getBuiltinTypeHover(word: string): any {
     let description = "";
 
-    if (word == "string") description = "**type** `string`\n\nString primitive type. Represents a sequence of UTF-16 characters.";
-    else if (word == "number") description = "**type** `number`\n\nNumeric primitive type. 64-bit IEEE 754 floating point.";
-    else if (word == "boolean") description = "**type** `boolean`\n\nBoolean primitive type. Either `true` or `false`.";
-    else if (word == "void") description = "**type** `void`\n\nVoid type. Indicates a function returns no value.";
-    else if (word == "any") description = "**type** `any`\n\nAny type. Disables type checking for this value.";
-    else if (word == "null") description = "**type** `null`\n\nNull type. Represents an intentionally empty value.";
-    else if (word == "undefined") description = "**type** `undefined`\n\nUndefined type. Variable declared but not assigned.";
-    else if (word == "object") description = "**type** `object`\n\nObject type. A non-primitive value with properties.";
-    else if (word == "Array") description = "**type** `Array<T>`\n\nGeneric array type. Ordered collection of elements.";
-    else if (word == "Map") description = "**type** `Map<K, V>`\n\nKey-value collection with unique keys.";
-    else if (word == "Set") description = "**type** `Set<T>`\n\nCollection of unique values.";
-    else if (word == "Promise") description = "**type** `Promise<T>`\n\nRepresents an asynchronous operation's result.";
+    switch (word) {
+        case "string":
+            description = "**type** `string`\n\nString primitive type. Represents a sequence of UTF-16 characters.";
+            break;
+        case "number":
+            description = "**type** `number`\n\nNumeric primitive type. 64-bit IEEE 754 floating point.";
+            break;
+        case "boolean":
+            description = "**type** `boolean`\n\nBoolean primitive type. Either `true` or `false`.";
+            break;
+        case "void":
+            description = "**type** `void`\n\nVoid type. Indicates a function returns no value.";
+            break;
+        case "any":
+            description = "**type** `any`\n\nAny type. Disables type checking for this value.";
+            break;
+        case "null":
+            description = "**type** `null`\n\nNull type. Represents an intentionally empty value.";
+            break;
+        case "undefined":
+            description = "**type** `undefined`\n\nUndefined type. Variable declared but not assigned.";
+            break;
+        case "object":
+            description = "**type** `object`\n\nObject type. A non-primitive value with properties.";
+            break;
+        case "Array":
+            description = "**type** `Array<T>`\n\nGeneric array type. Ordered collection of elements.";
+            break;
+        case "Map":
+            description = "**type** `Map<K, V>`\n\nKey-value collection with unique keys.";
+            break;
+        case "Set":
+            description = "**type** `Set<T>`\n\nCollection of unique values.";
+            break;
+        case "Promise":
+            description = "**type** `Promise<T>`\n\nRepresents an asynchronous operation's result.";
+            break;
+    }
 
     if (description == "") {
         return null;
@@ -105,25 +146,66 @@ function getBuiltinTypeHover(word: string): any {
 function getKeywordHover(word: string): any {
     let description = "";
 
-    if (word == "let") description = "**keyword** `let`\n\nDeclares a block-scoped variable. In Oite, `let` bindings use move semantics by default.";
-    else if (word == "const") description = "**keyword** `const`\n\nDeclares a read-only constant. Value cannot be reassigned after initialization.";
-    else if (word == "function") description = "**keyword** `function`\n\nDeclares a named function.";
-    else if (word == "class") description = "**keyword** `class`\n\nDeclares a class with constructor, methods, and properties.";
-    else if (word == "interface") description = "**keyword** `interface`\n\nDeclares a type interface. Describes the shape of an object.";
-    else if (word == "import") description = "**keyword** `import`\n\nImports bindings from another module.\n\n```typescript\nimport { name } from \"./module\";\n```";
-    else if (word == "export") description = "**keyword** `export`\n\nExports bindings for use by other modules.\n\n```typescript\nexport function name() { }\n```";
-    else if (word == "return") description = "**keyword** `return`\n\nReturns a value from a function.";
-    else if (word == "if") description = "**keyword** `if`\n\nConditional execution.";
-    else if (word == "else") description = "**keyword** `else`\n\nAlternate branch of an `if` statement.";
-    else if (word == "for") description = "**keyword** `for`\n\nLoop construct. Supports `for..of` and C-style `for(;;)`.";
-    else if (word == "while") description = "**keyword** `while`\n\nLoop that executes while condition is true.";
-    else if (word == "async") description = "**keyword** `async`\n\nMarks a function as asynchronous (returns a Promise).";
-    else if (word == "await") description = "**keyword** `await`\n\nWaits for a Promise to resolve.";
-    else if (word == "new") description = "**keyword** `new`\n\nCreates a new instance of a class.";
-    else if (word == "typeof") description = "**keyword** `typeof`\n\nReturns the type of a value as a string.";
-    else if (word == "borrow") description = "**keyword** `borrow` (Oite)\n\nBorrow a reference to a value without taking ownership.";
-    else if (word == "move") description = "**keyword** `move` (Oite)\n\nExplicitly move ownership of a value.";
-    else if (word == "mut") description = "**keyword** `mut` (Oite)\n\nMutable borrow modifier. `&mut` allows modifying borrowed data.";
+
+    switch (word) {
+        case "let":
+            description = "**keyword** `let`\n\nDeclares a block-scoped variable. In Oite, `let` bindings use move semantics by default.";
+            break;
+        case "const":
+            description = "**keyword** `const`\n\nDeclares a read-only constant. Value cannot be reassigned after initialization.";
+            break;
+        case "function":
+            description = "**keyword** `function`\n\nDeclares a named function.";
+            break;
+        case "class":
+            description = "**keyword** `class`\n\nDeclares a class with constructor, methods, and properties.";
+            break;
+        case "interface":
+            description = "**keyword** `interface`\n\nDeclares a type interface. Describes the shape of an object.";
+            break;
+        case "import":
+            description = "**keyword** `import`\n\nImports bindings from another module.\n\n```typescript\nimport { name } from \"./module\";\n```";
+            break;
+        case "export":
+            description = "**keyword** `export`\n\nExports bindings for use by other modules.\n\n```typescript\nexport function name() { }\n```";
+            break;
+        case "return":
+            description = "**keyword** `return`\n\nReturns a value from a function.";
+            break;
+        case "if":
+            description = "**keyword** `if`\n\nConditional execution.";
+            break;
+        case "else":
+            description = "**keyword** `else`\n\nAlternate branch of an `if` statement.";
+            break;
+        case "for":
+            description = "**keyword** `for`\n\nLoop construct. Supports `for..of` and C-style `for(;;)`.";
+            break;
+        case "while":
+            description = "**keyword** `while`\n\nLoop that executes while condition is true.";
+            break;
+        case "async":
+            description = "**keyword** `async`\n\nMarks a function as asynchronous (returns a Promise).";
+            break;
+        case "await":
+            description = "**keyword** `await`\n\nWaits for a Promise to resolve.";
+            break;
+        case "new":
+            description = "**keyword** `new`\n\nCreates a new instance of a class.";
+            break;
+        case "typeof":
+            description = "**keyword** `typeof`\n\nReturns the type of a value as a string.";
+            break;
+        case "borrow":
+            description = "**keyword** `borrow` (Oite)\n\nBorrow a reference to a value without taking ownership.";
+            break;
+        case "move":
+            description = "**keyword** `move` (Oite)\n\nExplicitly move ownership of a value.";
+            break;
+        case "mut":
+            description = "**keyword** `mut` (Oite)\n\nMutable borrow modifier. `&mut` allows modifying borrowed data.";
+            break;
+    }
 
     if (description == "") {
         return null;

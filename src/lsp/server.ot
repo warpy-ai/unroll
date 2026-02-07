@@ -9,6 +9,7 @@ import { SymbolIndex } from "./symbols.ot";
 import { handleCompletion } from "./completion.ot";
 import { handleHover } from "./hover.ot";
 import { handleDefinition } from "./definition.ot";
+import { handleDocumentSymbol } from "./document_symbols.ot";
 
 /**
  * Run the LSP server. Blocks reading from stdin until shutdown/EOF.
@@ -100,6 +101,11 @@ function runLsp(args: string[]): number {
             continue;
         }
 
+        if (method == "textDocument/documentSymbol") {
+            handleDocumentSymbol(id, params, documents);
+            continue;
+        }
+
         // Unknown request — respond with method not found
         if (id != null) {
             sendError(id, -32601, "Method not found: " + method);
@@ -122,7 +128,8 @@ function handleInitialize(id: any, params: any): void {
                 resolveProvider: false
             },
             hoverProvider: true,
-            definitionProvider: true
+            definitionProvider: true,
+            documentSymbolProvider: true
         },
         serverInfo: {
             name: "oite-lsp",

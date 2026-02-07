@@ -33,8 +33,10 @@ function main(args: string[]): number {
     let command = parsed.command;
     let cmdArgs = parsed.args;
 
-    // Check for updates (non-blocking, cached)
-    checkForUpdates(VERSION);
+    // Check for updates (non-blocking, cached) — skip in LSP mode (stdout is reserved)
+    if (command != "lsp") {
+        checkForUpdates(VERSION);
+    }
 
     // Project management
     if (command == "new") {

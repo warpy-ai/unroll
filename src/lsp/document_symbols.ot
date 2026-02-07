@@ -1,0 +1,548 @@
+// LSP Document Symbols Handler
+// Provides hierarchical document symbols for outline view and breadcrumbs.
+
+import { sendResponse } from "./transport.ot";
+import { DocumentStore } from "./documents.ot";
+
+// LSP SymbolKind constants
+let SK_MODULE = 2;
+let SK_CLASS = 5;
+let SK_METHOD = 6;
+let SK_PROPERTY = 7;
+let SK_CONSTRUCTOR = 9;
+let SK_INTERFACE = 11;
+let SK_FUNCTION = 12;
+let SK_VARIABLE = 13;
+let SK_CONSTANT = 14;
+let SK_TYPE_PARAM = 26;
+
+/**
+ * Handle textDocument/documentSymbol request.
+ * Returns a hierarchical DocumentSymbol[] for outline/breadcrumbs.
+ */
+function handleDocumentSymbol(id: any, params: any, documents: DocumentStore): void {
+    let uri = params.textDocument.uri;
+    let content = documents.get(uri);
+    if (content == null) {
+        sendResponse(id, []);
+        return;
+    }
+
+    let symbols = buildDocumentSymbols(content);
+    sendResponse(id, symbols);
+}
+
+/**
+ * Build a hierarchical list of DocumentSymbol from source content.
+ * Classes and interfaces contain their members as children.
+ */
+function buildDocumentSymbols(content: string): any[] {
+    let lines = content.split("\n");
+    let symbols: any[] = [];
+    let i = 0;
+
+    while (i < lines.length) {
+        let line = lines[i];
+        let trimmed = line.trim();
+
+        // Skip empty lines and comments
+        if (trimmed == "" || trimmed.startsWith("//")) {
+            i = i + 1;
+            continue;
+        }
+
+        // Skip block comments
+        if (trimmed.startsWith("/*")) {
+            while (i < lines.length && lines[i].indexOf("*/") < 0) {
+                i = i + 1;
+            }
+            i = i + 1;
+            continue;
+        }
+
+        // Strip export prefix for matching
+        let rest = trimmed;
+        if (rest.startsWith("export ")) {
+            rest = rest.substring(7).trim();
+        }
+
+        // import { ... } from "..."
+        if (trimmed.startsWith("import ")) {
+            let sym = parseImportSymbol(trimmed, i);
+            if (sym != null) {
+                symbols.push(sym);
+            }
+            i = i + 1;
+            continue;
+        }
+
+        // class NAME { ... }
+        if (rest.startsWith("class ")) {
+            let sym = parseClassSymbol(rest, lines, i);
+            if (sym != null) {
+                symbols.push(sym);
+                i = sym.range.end.line + 1;
+                continue;
+            }
+        }
+
+        // interface NAME { ... }
+        if (rest.startsWith("interface ")) {
+            let sym = parseInterfaceSymbol(rest, lines, i);
+            if (sym != null) {
+                symbols.push(sym);
+                i = sym.range.end.line + 1;
+                continue;
+            }
+        }
+
+        // function NAME(...) or async function NAME(...)
+        let funcRest = rest;
+        if (funcRest.startsWith("async ")) {
+            funcRest = funcRest.substring(6).trim();
+        }
+        if (funcRest.startsWith("function ")) {
+            let sym = parseFunctionSymbol(funcRest, lines, i);
+            if (sym != null) {
+                symbols.push(sym);
+                i = sym.range.end.line + 1;
+                continue;
+            }
+        }
+
+        // let NAME or const NAME
+        if (rest.startsWith("let ") || rest.startsWith("const ")) {
+            let sym = parseVariableSymbol(rest, i);
+            if (sym != null) {
+                symbols.push(sym);
+            }
+            i = i + 1;
+            continue;
+        }
+
+        // type NAME =
+        if (rest.startsWith("type ")) {
+            let sym = parseTypeSymbol(rest, i);
+            if (sym != null) {
+                symbols.push(sym);
+            }
+            i = i + 1;
+            continue;
+        }
+
+        i = i + 1;
+    }
+
+    return symbols;
+}
+
+/**
+ * Parse a class declaration and its members.
+ */
+function parseClassSymbol(rest: string, lines: string[], startLine: number): any {
+    // rest starts after "export " if present, e.g., "class Foo extends Bar {"
+    let afterClass = rest.substring(6).trim();
+    let name = extractIdent(afterClass);
+    if (name == "") return null;
+
+    let detail = "class " + name;
+    let extendsIdx = afterClass.indexOf(" extends ");
+    if (extendsIdx >= 0) {
+        let parentPart = afterClass.substring(extendsIdx + 9).trim();
+        let parentName = extractIdent(parentPart);
+        if (parentName != "") {
+            detail = detail + " extends " + parentName;
+        }
+    }
+
+    // Find the end of the class body (matching braces)
+    let endLine = findClosingBrace(lines, startLine);
+
+    // Parse class members
+    let children = parseClassMembers(lines, startLine + 1, endLine);
+
+    let nameCol = lines[startLine].indexOf(name);
+    if (nameCol < 0) nameCol = 0;
+
+    return {
+        name: name,
+        detail: detail,
+        kind: SK_CLASS,
+        range: {
+            start: { line: startLine, character: 0 },
+            end: { line: endLine, character: lines[endLine].length }
+        },
+        selectionRange: {
+            start: { line: startLine, character: nameCol },
+            end: { line: startLine, character: nameCol + name.length }
+        },
+        children: children
+    };
+}
+
+/**
+ * Parse an interface declaration and its members.
+ */
+function parseInterfaceSymbol(rest: string, lines: string[], startLine: number): any {
+    let afterIface = rest.substring(10).trim();
+    let name = extractIdent(afterIface);
+    if (name == "") return null;
+
+    let endLine = findClosingBrace(lines, startLine);
+    let children = parseInterfaceMembers(lines, startLine + 1, endLine);
+
+    let nameCol = lines[startLine].indexOf(name);
+    if (nameCol < 0) nameCol = 0;
+
+    return {
+        name: name,
+        detail: "interface " + name,
+        kind: SK_INTERFACE,
+        range: {
+            start: { line: startLine, character: 0 },
+            end: { line: endLine, character: lines[endLine].length }
+        },
+        selectionRange: {
+            start: { line: startLine, character: nameCol },
+            end: { line: startLine, character: nameCol + name.length }
+        },
+        children: children
+    };
+}
+
+/**
+ * Parse class members (methods, constructor, properties).
+ */
+function parseClassMembers(lines: string[], fromLine: number, toLine: number): any[] {
+    let members: any[] = [];
+    let i = fromLine;
+
+    while (i < toLine) {
+        let trimmed = lines[i].trim();
+
+        // Skip empty lines and comments
+        if (trimmed == "" || trimmed.startsWith("//") || trimmed.startsWith("/*")) {
+            i = i + 1;
+            continue;
+        }
+
+        // constructor(...)
+        if (trimmed.startsWith("constructor(") || trimmed.startsWith("constructor (")) {
+            let endLine = findClosingBrace(lines, i);
+            members.push({
+                name: "constructor",
+                detail: "constructor",
+                kind: SK_CONSTRUCTOR,
+                range: {
+                    start: { line: i, character: 0 },
+                    end: { line: endLine, character: lines[endLine].length }
+                },
+                selectionRange: {
+                    start: { line: i, character: lines[i].indexOf("constructor") },
+                    end: { line: i, character: lines[i].indexOf("constructor") + 11 }
+                }
+            });
+            i = endLine + 1;
+            continue;
+        }
+
+        // Method: NAME(...) or NAME<T>(...) — identifier followed by ( or <
+        // Property: NAME: type or NAME = value
+        let ident = extractIdent(trimmed);
+        if (ident != "") {
+            let afterIdent = trimmed.substring(ident.length).trim();
+
+            if (afterIdent.startsWith("(") || afterIdent.startsWith("<")) {
+                // Method
+                let endLine = findClosingBrace(lines, i);
+                let detail = ident + afterIdent;
+                let braceIdx = detail.indexOf("{");
+                if (braceIdx > 0) {
+                    detail = detail.substring(0, braceIdx).trim();
+                }
+
+                let nameCol = lines[i].indexOf(ident);
+                if (nameCol < 0) nameCol = 0;
+
+                members.push({
+                    name: ident,
+                    detail: detail,
+                    kind: SK_METHOD,
+                    range: {
+                        start: { line: i, character: 0 },
+                        end: { line: endLine, character: lines[endLine].length }
+                    },
+                    selectionRange: {
+                        start: { line: i, character: nameCol },
+                        end: { line: i, character: nameCol + ident.length }
+                    }
+                });
+                i = endLine + 1;
+                continue;
+            } else if (afterIdent.startsWith(":") || afterIdent.startsWith("=")) {
+                // Property
+                let nameCol = lines[i].indexOf(ident);
+                if (nameCol < 0) nameCol = 0;
+
+                members.push({
+                    name: ident,
+                    detail: trimmed,
+                    kind: SK_PROPERTY,
+                    range: {
+                        start: { line: i, character: 0 },
+                        end: { line: i, character: lines[i].length }
+                    },
+                    selectionRange: {
+                        start: { line: i, character: nameCol },
+                        end: { line: i, character: nameCol + ident.length }
+                    }
+                });
+            }
+        }
+
+        i = i + 1;
+    }
+
+    return members;
+}
+
+/**
+ * Parse interface members (method signatures and properties).
+ */
+function parseInterfaceMembers(lines: string[], fromLine: number, toLine: number): any[] {
+    let members: any[] = [];
+
+    for (let i = fromLine; i < toLine; i = i + 1) {
+        let trimmed = lines[i].trim();
+        if (trimmed == "" || trimmed.startsWith("//") || trimmed == "}") {
+            continue;
+        }
+
+        let ident = extractIdent(trimmed);
+        if (ident == "") continue;
+
+        let afterIdent = trimmed.substring(ident.length).trim();
+        let kind = SK_PROPERTY;
+        if (afterIdent.startsWith("(") || afterIdent.startsWith("<")) {
+            kind = SK_METHOD;
+        }
+
+        let nameCol = lines[i].indexOf(ident);
+        if (nameCol < 0) nameCol = 0;
+
+        members.push({
+            name: ident,
+            detail: trimmed.replace(";", ""),
+            kind: kind,
+            range: {
+                start: { line: i, character: 0 },
+                end: { line: i, character: lines[i].length }
+            },
+            selectionRange: {
+                start: { line: i, character: nameCol },
+                end: { line: i, character: nameCol + ident.length }
+            }
+        });
+    }
+
+    return members;
+}
+
+/**
+ * Parse a top-level function declaration.
+ */
+function parseFunctionSymbol(rest: string, lines: string[], startLine: number): any {
+    let afterFunc = rest.substring(9).trim();
+    let name = extractIdent(afterFunc);
+    if (name == "") return null;
+
+    let detail = rest;
+    let braceIdx = detail.indexOf("{");
+    if (braceIdx > 0) {
+        detail = detail.substring(0, braceIdx).trim();
+    }
+
+    let endLine = findClosingBrace(lines, startLine);
+
+    let nameCol = lines[startLine].indexOf(name);
+    if (nameCol < 0) nameCol = 0;
+
+    return {
+        name: name,
+        detail: detail,
+        kind: SK_FUNCTION,
+        range: {
+            start: { line: startLine, character: 0 },
+            end: { line: endLine, character: lines[endLine].length }
+        },
+        selectionRange: {
+            start: { line: startLine, character: nameCol },
+            end: { line: startLine, character: nameCol + name.length }
+        }
+    };
+}
+
+/**
+ * Parse a variable declaration.
+ */
+function parseVariableSymbol(rest: string, lineNum: number): any {
+    let keyword = "";
+    let kind = SK_VARIABLE;
+    let afterKw = "";
+
+    if (rest.startsWith("let ")) {
+        keyword = "let";
+        afterKw = rest.substring(4).trim();
+    } else if (rest.startsWith("const ")) {
+        keyword = "const";
+        kind = SK_CONSTANT;
+        afterKw = rest.substring(6).trim();
+    } else {
+        return null;
+    }
+
+    let name = extractIdent(afterKw);
+    if (name == "") return null;
+
+    return {
+        name: name,
+        detail: rest,
+        kind: kind,
+        range: {
+            start: { line: lineNum, character: 0 },
+            end: { line: lineNum, character: rest.length }
+        },
+        selectionRange: {
+            start: { line: lineNum, character: 0 },
+            end: { line: lineNum, character: name.length }
+        }
+    };
+}
+
+/**
+ * Parse a type alias declaration.
+ */
+function parseTypeSymbol(rest: string, lineNum: number): any {
+    let afterType = rest.substring(5).trim();
+    let name = extractIdent(afterType);
+    if (name == "") return null;
+
+    return {
+        name: name,
+        detail: rest,
+        kind: SK_TYPE_PARAM,
+        range: {
+            start: { line: lineNum, character: 0 },
+            end: { line: lineNum, character: rest.length }
+        },
+        selectionRange: {
+            start: { line: lineNum, character: 0 },
+            end: { line: lineNum, character: name.length }
+        }
+    };
+}
+
+/**
+ * Parse an import statement as a module symbol.
+ */
+function parseImportSymbol(line: string, lineNum: number): any {
+    let fromIdx = line.indexOf(" from ");
+    if (fromIdx < 0) return null;
+
+    let afterFrom = line.substring(fromIdx + 6).trim();
+    let path = "";
+    if (afterFrom.startsWith("\"")) {
+        let rest = afterFrom.substring(1);
+        let endQuote = rest.indexOf("\"");
+        if (endQuote > 0) {
+            path = rest.substring(0, endQuote);
+        }
+    }
+    if (path == "") return null;
+
+    // Extract just the filename for display
+    let lastSlash = path.lastIndexOf("/");
+    let displayName = path;
+    if (lastSlash >= 0) {
+        displayName = path.substring(lastSlash + 1);
+    }
+
+    return {
+        name: displayName,
+        detail: line.trim(),
+        kind: SK_MODULE,
+        range: {
+            start: { line: lineNum, character: 0 },
+            end: { line: lineNum, character: line.length }
+        },
+        selectionRange: {
+            start: { line: lineNum, character: 0 },
+            end: { line: lineNum, character: line.length }
+        }
+    };
+}
+
+/**
+ * Find the line of the closing brace that matches the first opening brace
+ * found at or after startLine.
+ */
+function findClosingBrace(lines: string[], startLine: number): number {
+    let depth = 0;
+    let foundOpen = false;
+
+    for (let i = startLine; i < lines.length; i = i + 1) {
+        let line = lines[i];
+        for (let j = 0; j < line.length; j = j + 1) {
+            let c = line[j];
+            // Skip characters inside string literals
+            if (c == "\"") {
+                j = j + 1;
+                while (j < line.length && line[j] != "\"") {
+                    if (line[j] == "\\") j = j + 1;
+                    j = j + 1;
+                }
+                continue;
+            }
+            if (c == "'") {
+                j = j + 1;
+                while (j < line.length && line[j] != "'") {
+                    if (line[j] == "\\") j = j + 1;
+                    j = j + 1;
+                }
+                continue;
+            }
+            if (c == "{") {
+                depth = depth + 1;
+                foundOpen = true;
+            } else if (c == "}") {
+                depth = depth - 1;
+                if (foundOpen && depth == 0) {
+                    return i;
+                }
+            }
+        }
+    }
+
+    // If we didn't find a match, return the last line
+    return lines.length - 1;
+}
+
+/**
+ * Extract an identifier from the start of a string.
+ */
+function extractIdent(s: string): string {
+    let result = "";
+    for (let i = 0; i < s.length; i = i + 1) {
+        let c = s[i];
+        if ((c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || c == "_" || c == "$") {
+            result = result + c;
+        } else if (result.length > 0 && c >= "0" && c <= "9") {
+            result = result + c;
+        } else {
+            break;
+        }
+    }
+    return result;
+}
+
+export { handleDocumentSymbol };
