@@ -1,5 +1,5 @@
 // LSP Go-to-Definition Handler
-// Resolves symbol definitions across open documents.
+// Resolves symbol definitions across open documents and import targets.
 
 import { sendResponse } from "./transport.ot";
 import { DocumentStore } from "./documents.ot";
@@ -19,18 +19,39 @@ function handleDefinition(id: any, params: any, documents: DocumentStore, symbol
         return;
     }
 
+    let lines = content.split("\n");
+    if (line < 0 || line >= lines.length) {
+        sendResponse(id, null);
+        return;
+    }
+
+    let lineText = lines[line];
+
+    // 1. Check if cursor is on an import line — resolve the file path
+    let importResult = tryResolveImport(lineText, line, character, uri, documents, symbols);
+    if (importResult != null) {
+        sendResponse(id, importResult);
+        return;
+    }
+
     let word = getWordAtPosition(content, line, character);
     if (word == "") {
         sendResponse(id, null);
         return;
     }
 
-    // 1. Search symbol index across ALL open documents
+    // 2. If the word is an imported symbol, follow it to its source file
+    let importDef = tryFollowImportedSymbol(word, content, uri, documents, symbols);
+    if (importDef != null) {
+        sendResponse(id, importDef);
+        return;
+    }
+
+    // 3. Search symbol index across ALL open documents
     let matches = symbols.findByName(word);
     if (matches.length > 0) {
         let locations: any[] = [];
         for (let sym of matches) {
-            // Skip import symbols — we want the actual definition
             if (sym.kind != "import") {
                 locations.push({
                     uri: sym.uri,
@@ -63,7 +84,7 @@ function handleDefinition(id: any, params: any, documents: DocumentStore, symbol
         return;
     }
 
-    // 2. Fallback: scan current document for declaration patterns
+    // 4. Fallback: scan current document for declaration patterns
     let fallbackLocation = scanForDefinition(word, content, uri);
     if (fallbackLocation != null) {
         sendResponse(id, fallbackLocation);
@@ -71,6 +92,321 @@ function handleDefinition(id: any, params: any, documents: DocumentStore, symbol
     }
 
     sendResponse(id, null);
+}
+
+/**
+ * Try to resolve an import path when cursor is on an import line.
+ * Handles both clicking on the path string and on an imported name.
+ */
+function tryResolveImport(lineText: string, line: number, character: number, currentUri: string, documents: DocumentStore, symbols: SymbolIndex): any {
+    let trimmed = lineText.trim();
+    if (!trimmed.startsWith("import ")) {
+        return null;
+    }
+
+    // Extract the "from" path: import { ... } from "./path.ot"
+    let fromPath = extractImportPath(trimmed);
+    if (fromPath == "") {
+        return null;
+    }
+
+    // Resolve the path relative to the current file
+    let targetUri = resolveImportUri(fromPath, currentUri);
+    if (targetUri == "") {
+        return null;
+    }
+
+    // Check if cursor is on the path string (inside quotes)
+    let quoteStart = lineText.indexOf("\"" + fromPath + "\"");
+    if (quoteStart < 0) {
+        quoteStart = lineText.indexOf("'" + fromPath + "'");
+    }
+
+    if (quoteStart >= 0 && character >= quoteStart && character <= quoteStart + fromPath.length + 2) {
+        // Cursor is on the path — go to the beginning of the file
+        return {
+            uri: targetUri,
+            range: {
+                start: { line: 0, character: 0 },
+                end: { line: 0, character: 0 }
+            }
+        };
+    }
+
+    // Cursor is on an imported name — find its definition in the target file
+    let word = getWordAtPosition(lineText, 0, character);
+    if (word == "") {
+        return null;
+    }
+
+    // Check the name is between { and }
+    let braceStart = lineText.indexOf("{");
+    let braceEnd = lineText.indexOf("}");
+    if (braceStart < 0 || braceEnd < 0 || character < braceStart || character > braceEnd) {
+        return null;
+    }
+
+    let location = findDefinitionInFile(word, targetUri, documents, symbols);
+    if (location != null) {
+        return location;
+    }
+
+    // Fallback: go to top of the target file
+    return {
+        uri: targetUri,
+        range: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 0 }
+        }
+    };
+}
+
+/**
+ * When clicking on a symbol that was imported, follow it to its source file.
+ * E.g., clicking on `runLsp()` call should go to its definition in server.ot.
+ */
+function tryFollowImportedSymbol(word: string, content: string, currentUri: string, documents: DocumentStore, symbols: SymbolIndex): any {
+    let lines = content.split("\n");
+    for (let i = 0; i < lines.length; i = i + 1) {
+        let trimmed = lines[i].trim();
+        if (!trimmed.startsWith("import ")) {
+            continue;
+        }
+
+        // Check if this import line imports the symbol
+        let braceStart = trimmed.indexOf("{");
+        let braceEnd = trimmed.indexOf("}");
+        if (braceStart < 0 || braceEnd < 0) {
+            continue;
+        }
+
+        let namesStr = trimmed.substring(braceStart + 1, braceEnd);
+        let names = namesStr.split(",");
+        let found = false;
+
+        for (let n of names) {
+            let name = n.trim();
+            // Handle "x as y" — check both original and alias
+            let asIdx = name.indexOf(" as ");
+            if (asIdx >= 0) {
+                let alias = name.substring(asIdx + 4).trim();
+                let original = name.substring(0, asIdx).trim();
+                if (alias == word) {
+                    word = original; // Use original name for lookup
+                    found = true;
+                }
+            } else if (name == word) {
+                found = true;
+            }
+        }
+
+        if (!found) {
+            continue;
+        }
+
+        // Found the import — resolve the file path
+        let fromPath = extractImportPath(trimmed);
+        if (fromPath == "") {
+            continue;
+        }
+
+        let targetUri = resolveImportUri(fromPath, currentUri);
+        if (targetUri == "") {
+            continue;
+        }
+
+        let location = findDefinitionInFile(word, targetUri, documents, symbols);
+        if (location != null) {
+            return location;
+        }
+
+        // Fallback: top of file
+        return {
+            uri: targetUri,
+            range: {
+                start: { line: 0, character: 0 },
+                end: { line: 0, character: 0 }
+            }
+        };
+    }
+
+    return null;
+}
+
+/**
+ * Find a symbol definition in a specific file.
+ * Checks open documents first, falls back to reading from disk.
+ */
+function findDefinitionInFile(name: string, targetUri: string, documents: DocumentStore, symbols: SymbolIndex): any {
+    // Check symbol index first (for open documents)
+    let syms = symbols.getForUri(targetUri);
+    for (let sym of syms) {
+        if (sym.name == name && sym.kind != "import") {
+            return makeLocation(targetUri, sym.line, sym.column, sym.name.length);
+        }
+    }
+
+    // Try reading from open documents
+    let content = documents.get(targetUri);
+
+    // If not open, try reading from disk
+    if (content == null) {
+        let filePath = uriToPath(targetUri);
+        if (filePath != "" && fs.existsSync(filePath)) {
+            content = fs.readFileSync(filePath);
+        }
+    }
+
+    if (content == null) {
+        return null;
+    }
+
+    // Scan the content for the definition
+    return scanForDefinition(name, content, targetUri);
+}
+
+/**
+ * Extract the import path from an import statement.
+ * E.g., 'import { foo } from "./bar.ot"' → './bar.ot'
+ */
+function extractImportPath(line: string): string {
+    let fromIdx = line.indexOf(" from ");
+    if (fromIdx < 0) {
+        return "";
+    }
+
+    let afterFrom = line.substring(fromIdx + 6).trim();
+
+    // Remove quotes — use substring(1) then indexOf to avoid indexOf with start position
+    let path = "";
+    if (afterFrom.startsWith("\"")) {
+        let rest = afterFrom.substring(1);
+        let endQuote = rest.indexOf("\"");
+        if (endQuote > 0) {
+            path = rest.substring(0, endQuote);
+        }
+    } else if (afterFrom.startsWith("'")) {
+        let rest = afterFrom.substring(1);
+        let endQuote = rest.indexOf("'");
+        if (endQuote > 0) {
+            path = rest.substring(0, endQuote);
+        }
+    }
+
+    return path;
+}
+
+/**
+ * Resolve an import path relative to the current file's URI.
+ * E.g., './lsp/server.ot' relative to 'file:///foo/src/main.ot'
+ *     → 'file:///foo/src/lsp/server.ot'
+ */
+function resolveImportUri(importPath: string, currentUri: string): string {
+    // Get directory of current file
+    let currentPath = uriToPath(currentUri);
+    if (currentPath == "") {
+        return "";
+    }
+
+    let lastSlash = currentPath.lastIndexOf("/");
+    if (lastSlash < 0) {
+        return "";
+    }
+    let dir = currentPath.substring(0, lastSlash);
+
+    // Resolve the import path
+    let resolved = "";
+    if (importPath.startsWith("./")) {
+        resolved = dir + "/" + importPath.substring(2);
+    } else if (importPath.startsWith("../")) {
+        let parts = importPath;
+        let base = dir;
+        while (parts.startsWith("../")) {
+            parts = parts.substring(3);
+            let parentSlash = base.lastIndexOf("/");
+            if (parentSlash >= 0) {
+                base = base.substring(0, parentSlash);
+            }
+        }
+        resolved = base + "/" + parts;
+    } else {
+        // Absolute or module path — not resolvable locally
+        return "";
+    }
+
+    // Check if file exists
+    if (!fs.existsSync(resolved)) {
+        return "";
+    }
+
+    return pathToUri(resolved);
+}
+
+/**
+ * Convert a file:// URI to a filesystem path.
+ */
+function uriToPath(uri: string): string {
+    if (!uri.startsWith("file://")) {
+        return "";
+    }
+    let path = uri.substring(7);
+    // Decode URI-encoded characters
+    path = decodeURIComponent(path);
+    return path;
+}
+
+/**
+ * Convert a filesystem path to a file:// URI.
+ */
+function pathToUri(path: string): string {
+    // Encode spaces and special characters
+    let encoded = encodePathForUri(path);
+    return "file://" + encoded;
+}
+
+/**
+ * Encode a path for use in a file:// URI.
+ * Only encode characters that need encoding in URIs, preserve / and :
+ */
+function encodePathForUri(path: string): string {
+    let result = "";
+    for (let i = 0; i < path.length; i = i + 1) {
+        let c = path[i];
+        if (c == " ") {
+            result = result + "%20";
+        } else {
+            result = result + c;
+        }
+    }
+    return result;
+}
+
+/**
+ * Decode URI-encoded characters (e.g. %20 → space).
+ */
+function decodeURIComponent(s: string): string {
+    let result = "";
+    let i = 0;
+    while (i < s.length) {
+        if (s[i] == "%" && i + 2 < s.length) {
+            let hex = s.substring(i + 1, i + 3);
+            if (hex == "20") {
+                result = result + " ";
+            } else if (hex == "2F" || hex == "2f") {
+                result = result + "/";
+            } else if (hex == "3A" || hex == "3a") {
+                result = result + ":";
+            } else {
+                // Keep as-is for unknown codes
+                result = result + "%" + hex;
+            }
+            i = i + 3;
+        } else {
+            result = result + s[i];
+            i = i + 1;
+        }
+    }
+    return result;
 }
 
 /**
