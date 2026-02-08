@@ -1,0 +1,164 @@
+// LSP Folding Range Handler
+// Provides collapsible regions for functions, classes, blocks, and comments.
+
+import { sendResponse } from "./transport.ot";
+import { DocumentStore } from "./documents.ot";
+
+// FoldingRangeKind
+let FK_COMMENT = "comment";
+let FK_IMPORTS = "imports";
+let FK_REGION = "region";
+
+/**
+ * Handle textDocument/foldingRange request.
+ * Returns FoldingRange[] for collapsible regions.
+ */
+function handleFoldingRange(id: any, params: any, documents: DocumentStore): void {
+    let uri = params.textDocument.uri;
+    let content = documents.get(uri);
+    if (content == null) {
+        sendResponse(id, []);
+        return;
+    }
+
+    let ranges: any[] = [];
+    let lines = content.split("\n");
+
+    // 1. Find import block
+    let importStart = -1;
+    let importEnd = -1;
+    for (let i = 0; i < lines.length; i = i + 1) {
+        let trimmed = lines[i].trim();
+        if (trimmed.startsWith("import ")) {
+            if (importStart < 0) {
+                importStart = i;
+            }
+            importEnd = i;
+        } else if (trimmed != "" && !trimmed.startsWith("//") && importStart >= 0) {
+            break;
+        }
+    }
+    if (importStart >= 0 && importEnd > importStart) {
+        ranges.push({
+            startLine: importStart,
+            endLine: importEnd,
+            kind: FK_IMPORTS
+        });
+    }
+
+    // 2. Find block comments /** ... */ and /* ... */
+    let i = 0;
+    while (i < lines.length) {
+        let trimmed = lines[i].trim();
+        if (trimmed.startsWith("/*")) {
+            let startLine = i;
+            // Find end of comment
+            while (i < lines.length) {
+                if (lines[i].indexOf("*/") >= 0) {
+                    if (i > startLine) {
+                        ranges.push({
+                            startLine: startLine,
+                            endLine: i,
+                            kind: FK_COMMENT
+                        });
+                    }
+                    break;
+                }
+                i = i + 1;
+            }
+        }
+        i = i + 1;
+    }
+
+    // 3. Find consecutive single-line comment blocks (3+ lines)
+    i = 0;
+    while (i < lines.length) {
+        let trimmed = lines[i].trim();
+        if (trimmed.startsWith("//") && !trimmed.startsWith("// ==")) {
+            let startLine = i;
+            while (i < lines.length && lines[i].trim().startsWith("//")) {
+                i = i + 1;
+            }
+            let endLine = i - 1;
+            if (endLine - startLine >= 2) {
+                ranges.push({
+                    startLine: startLine,
+                    endLine: endLine,
+                    kind: FK_COMMENT
+                });
+            }
+            continue;
+        }
+        i = i + 1;
+    }
+
+    // 4. Find brace-delimited blocks (functions, classes, interfaces, if, for, while)
+    findBraceBlocks(lines, ranges);
+
+    sendResponse(id, ranges);
+}
+
+/**
+ * Find all brace-delimited blocks and add folding ranges.
+ */
+function findBraceBlocks(lines: string[], ranges: any[]): void {
+    // Use a stack to track opening braces
+    let stack: number[] = [];   // line numbers of opening braces
+    let braceLines: number[] = []; // which line each { is on
+
+    for (let i = 0; i < lines.length; i = i + 1) {
+        let line = lines[i];
+
+        for (let j = 0; j < line.length; j = j + 1) {
+            let c = line[j];
+
+            // Skip string literals
+            if (c == "\"") {
+                j = j + 1;
+                while (j < line.length && line[j] != "\"") {
+                    if (line[j] == "\\") j = j + 1;
+                    j = j + 1;
+                }
+                continue;
+            }
+            if (c == "'") {
+                j = j + 1;
+                while (j < line.length && line[j] != "'") {
+                    if (line[j] == "\\") j = j + 1;
+                    j = j + 1;
+                }
+                continue;
+            }
+            if (c == "`") {
+                j = j + 1;
+                while (j < line.length && line[j] != "`") {
+                    if (line[j] == "\\") j = j + 1;
+                    j = j + 1;
+                }
+                continue;
+            }
+
+            // Skip line comments
+            if (c == "/" && j + 1 < line.length && line[j + 1] == "/") {
+                break;
+            }
+
+            if (c == "{") {
+                stack.push(i);
+            } else if (c == "}") {
+                if (stack.length > 0) {
+                    let openLine = stack.pop();
+                    // Only create folding range if it spans multiple lines
+                    if (i > openLine) {
+                        ranges.push({
+                            startLine: openLine,
+                            endLine: i
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
+export { handleFoldingRange };

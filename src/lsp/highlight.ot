@@ -1,0 +1,169 @@
+// LSP Document Highlight Handler
+// Highlights all occurrences of the symbol under cursor in the current document.
+
+import { sendResponse } from "./transport.ot";
+import { DocumentStore } from "./documents.ot";
+import { getWordAtPosition } from "./symbols.ot";
+
+// DocumentHighlightKind
+let HK_TEXT = 1;
+let HK_READ = 2;
+let HK_WRITE = 3;
+
+/**
+ * Handle textDocument/documentHighlight request.
+ * Returns DocumentHighlight[] for all occurrences of the word under cursor.
+ */
+function handleDocumentHighlight(id: any, params: any, documents: DocumentStore): void {
+    let uri = params.textDocument.uri;
+    let line = params.position.line;
+    let character = params.position.character;
+
+    let content = documents.get(uri);
+    if (content == null) {
+        sendResponse(id, []);
+        return;
+    }
+
+    let word = getWordAtPosition(content, line, character);
+    if (word == "") {
+        sendResponse(id, []);
+        return;
+    }
+
+    let highlights: any[] = [];
+    let lines = content.split("\n");
+
+    for (let i = 0; i < lines.length; i = i + 1) {
+        let lineText = lines[i];
+
+        // Manual word search (indexOf with 2 args is broken in oitec)
+        let searchFrom = 0;
+        while (searchFrom <= lineText.length - word.length) {
+            let found = -1;
+            for (let j = searchFrom; j <= lineText.length - word.length; j = j + 1) {
+                let match = true;
+                for (let k = 0; k < word.length; k = k + 1) {
+                    if (lineText[j + k] != word[k]) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) {
+                    found = j;
+                    break;
+                }
+            }
+
+            if (found < 0) break;
+
+            // Check word boundaries
+            let validStart = true;
+            let validEnd = true;
+
+            if (found > 0) {
+                let before = lineText[found - 1];
+                if (isIdentChar(before)) {
+                    validStart = false;
+                }
+            }
+
+            let afterIdx = found + word.length;
+            if (afterIdx < lineText.length) {
+                let after = lineText[afterIdx];
+                if (isIdentChar(after)) {
+                    validEnd = false;
+                }
+            }
+
+            if (validStart && validEnd) {
+                // Determine if this is a write (assignment) or read
+                let kind = HK_READ;
+                if (isWriteContext(lineText, found, word.length)) {
+                    kind = HK_WRITE;
+                }
+
+                highlights.push({
+                    range: {
+                        start: { line: i, character: found },
+                        end: { line: i, character: found + word.length }
+                    },
+                    kind: kind
+                });
+            }
+
+            searchFrom = found + word.length;
+        }
+    }
+
+    sendResponse(id, highlights);
+}
+
+/**
+ * Check if an occurrence is in a write context (declaration or assignment).
+ */
+function isWriteContext(lineText: string, pos: number, wordLen: number): boolean {
+    let trimmed = lineText.trim();
+
+    // Declaration: let x = ..., const x = ..., let x: ... =
+    if (trimmed.startsWith("let ") || trimmed.startsWith("const ")) {
+        // Check if the word is right after the keyword
+        let afterKw = "";
+        if (trimmed.startsWith("let ")) {
+            afterKw = trimmed.substring(4).trim();
+        } else {
+            afterKw = trimmed.substring(6).trim();
+        }
+        // Extract the declared name
+        let declName = extractIdent(afterKw);
+        if (declName != "") {
+            let declCol = lineText.indexOf(declName);
+            if (declCol == pos) {
+                return true;
+            }
+        }
+    }
+
+    // Assignment: word = ... (but not == or ===)
+    let afterWord = lineText.substring(pos + wordLen).trim();
+    if (afterWord.startsWith("=") && !afterWord.startsWith("==")) {
+        return true;
+    }
+
+    // Function parameter
+    if (trimmed.startsWith("function ")) {
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * Check if a character is part of an identifier.
+ */
+function isIdentChar(c: string): boolean {
+    return (c >= "a" && c <= "z") ||
+           (c >= "A" && c <= "Z") ||
+           (c >= "0" && c <= "9") ||
+           c == "_" || c == "$";
+}
+
+/**
+ * Extract an identifier from the start of a string.
+ */
+function extractIdent(s: string): string {
+    let result = "";
+    for (let i = 0; i < s.length; i = i + 1) {
+        let c = s[i];
+        if ((c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || c == "_" || c == "$") {
+            result = result + c;
+        } else if (result.length > 0 && c >= "0" && c <= "9") {
+            result = result + c;
+        } else {
+            break;
+        }
+    }
+    return result;
+}
+
+export { handleDocumentHighlight };

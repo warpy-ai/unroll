@@ -14,6 +14,10 @@ import { handleReferences } from "./references.ot";
 import { handleSignatureHelp } from "./signature_help.ot";
 import { handleWorkspaceSymbol } from "./workspace_symbols.ot";
 import { handleRename, handlePrepareRename } from "./rename.ot";
+import { handleDocumentHighlight } from "./highlight.ot";
+import { handleCodeAction } from "./code_actions.ot";
+import { handleFoldingRange } from "./folding.ot";
+import { handleFormatting } from "./formatting.ot";
 
 /**
  * Run the LSP server. Blocks reading from stdin until shutdown/EOF.
@@ -137,6 +141,26 @@ function runLsp(args: string[]): number {
             continue;
         }
 
+        if (method == "textDocument/documentHighlight") {
+            handleDocumentHighlight(id, params, documents);
+            continue;
+        }
+
+        if (method == "textDocument/codeAction") {
+            handleCodeAction(id, params, documents, symbols, workspaceRoot);
+            continue;
+        }
+
+        if (method == "textDocument/foldingRange") {
+            handleFoldingRange(id, params, documents);
+            continue;
+        }
+
+        if (method == "textDocument/formatting") {
+            handleFormatting(id, params, documents);
+            continue;
+        }
+
         // Unknown request — respond with method not found
         if (id != null) {
             sendError(id, -32601, "Method not found: " + method);
@@ -168,7 +192,11 @@ function handleInitialize(id: any, params: any): void {
             workspaceSymbolProvider: true,
             renameProvider: {
                 prepareProvider: true
-            }
+            },
+            documentHighlightProvider: true,
+            codeActionProvider: true,
+            foldingRangeProvider: true,
+            documentFormattingProvider: true
         },
         serverInfo: {
             name: "oite-lsp",
