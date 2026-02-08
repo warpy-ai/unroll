@@ -1,0 +1,442 @@
+// LSP Code Actions Handler
+// Provides quick fixes and refactoring suggestions.
+
+import { sendResponse } from "./transport.ot";
+import { DocumentStore, uriToPath } from "./documents.ot";
+import { SymbolIndex } from "./symbols.ot";
+import { discoverOtFiles } from "./references.ot";
+
+/**
+ * Handle textDocument/codeAction request.
+ * Returns CodeAction[] for the given range/context.
+ */
+function handleCodeAction(id: any, params: any, documents: DocumentStore, symbols: SymbolIndex, workspaceRoot: string): void {
+    let uri = params.textDocument.uri;
+    let range = params.range;
+    let context = params.context;
+
+    let content = documents.get(uri);
+    if (content == null) {
+        sendResponse(id, []);
+        return;
+    }
+
+    let actions: any[] = [];
+
+    // Check diagnostics in context for quick fixes
+    let diagnostics: any[] = [];
+    if (context != null && context.diagnostics != null) {
+        diagnostics = context.diagnostics;
+    }
+
+    // Generate quick fixes based on diagnostics
+    for (let di = 0; di < diagnostics.length; di = di + 1) {
+        let diag = diagnostics[di];
+        let msg = diag.message;
+        if (msg == null) {
+            msg = "";
+        }
+
+        // "Cannot find name 'X'" → suggest adding import
+        if (msg.indexOf("Cannot find name") >= 0 || msg.indexOf("Undeclared variable") >= 0) {
+            let name = extractNameFromError(msg);
+            if (name != "") {
+                let importActions = suggestImport(name, uri, content, workspaceRoot);
+                for (let ai = 0; ai < importActions.length; ai = ai + 1) {
+                    actions.push(importActions[ai]);
+                }
+            }
+        }
+    }
+
+    // Range-based actions (on selected or cursor line)
+    let startLine = range.start.line;
+    let lines = content.split("\n");
+
+    if (startLine >= 0 && startLine < lines.length) {
+        let lineText = lines[startLine].trim();
+
+        // Offer "Remove unused import" if on an import line
+        if (lineText.startsWith("import ")) {
+            let unusedNames = findUnusedImportNames(lineText, content, startLine);
+            if (unusedNames.length > 0) {
+                actions.push({
+                    title: "Remove unused import",
+                    kind: "quickfix",
+                    edit: {
+                        changes: buildRemoveLineEdit(uri, startLine, lines)
+                    }
+                });
+            }
+        }
+
+        // Offer "Extract to variable" if on an expression-like line
+        // (only if there's a selection spanning part of a line)
+        if (range.start.line == range.end.line && range.start.character != range.end.character) {
+            let selectedText = lines[startLine].substring(range.start.character, range.end.character);
+            if (selectedText.trim() != "") {
+                actions.push({
+                    title: "Extract to variable",
+                    kind: "refactor.extract",
+                    edit: {
+                        changes: buildExtractVariableEdit(uri, selectedText, range, lines)
+                    }
+                });
+            }
+        }
+    }
+
+    sendResponse(id, actions);
+}
+
+/**
+ * Extract the symbol name from an error message like "Cannot find name 'Foo'".
+ */
+function extractNameFromError(msg: string): string {
+    // Look for single-quoted name
+    let quoteStart = msg.indexOf("'");
+    if (quoteStart < 0) return "";
+
+    let rest = msg.substring(quoteStart + 1);
+    let quoteEnd = rest.indexOf("'");
+    if (quoteEnd < 0) return "";
+
+    return rest.substring(0, quoteEnd);
+}
+
+/**
+ * Suggest import actions for a missing symbol name.
+ * Scans workspace files for exported symbols matching the name.
+ */
+function suggestImport(name: string, currentUri: string, content: string, workspaceRoot: string): any[] {
+    let actions: any[] = [];
+    if (workspaceRoot == "") return actions;
+
+    let files: string[] = [];
+    discoverOtFiles(workspaceRoot, files);
+
+    let currentPath = uriToPath(currentUri);
+
+    for (let fi = 0; fi < files.length; fi = fi + 1) {
+        let filePath = files[fi];
+        if (filePath == currentPath) continue;
+
+        if (!fs.existsSync(filePath)) continue;
+        let fileContent = fs.readFileSync(filePath);
+        if (fileContent == null) continue;
+
+        // Check if this file exports the name
+        if (fileExportsName(fileContent, name)) {
+            let relativePath = computeRelativePath(currentPath, filePath);
+            let importStatement = "import { " + name + " } from \"" + relativePath + "\";\n";
+
+            // Find insertion point (after last import, or at top)
+            let insertLine = findImportInsertLine(content);
+
+            let changes: any = {};
+            changes[currentUri] = [{
+                range: {
+                    start: { line: insertLine, character: 0 },
+                    end: { line: insertLine, character: 0 }
+                },
+                newText: importStatement
+            }];
+
+            actions.push({
+                title: "Add import from \"" + relativePath + "\"",
+                kind: "quickfix",
+                edit: { changes: changes }
+            });
+        }
+    }
+
+    return actions;
+}
+
+/**
+ * Check if a file exports a given name.
+ */
+function fileExportsName(content: string, name: string): boolean {
+    let lines = content.split("\n");
+
+    for (let i = 0; i < lines.length; i = i + 1) {
+        let trimmed = lines[i].trim();
+
+        // export function NAME
+        if (trimmed.startsWith("export function " + name + "(") ||
+            trimmed.startsWith("export function " + name + "<") ||
+            trimmed.startsWith("export function " + name + " ")) {
+            return true;
+        }
+
+        // export class NAME
+        if (trimmed.startsWith("export class " + name + " ") ||
+            trimmed.startsWith("export class " + name + "{")) {
+            return true;
+        }
+
+        // export interface NAME
+        if (trimmed.startsWith("export interface " + name + " ") ||
+            trimmed.startsWith("export interface " + name + "{")) {
+            return true;
+        }
+
+        // export let/const NAME
+        if (trimmed.startsWith("export let " + name + " ") ||
+            trimmed.startsWith("export let " + name + ":") ||
+            trimmed.startsWith("export let " + name + "=") ||
+            trimmed.startsWith("export const " + name + " ") ||
+            trimmed.startsWith("export const " + name + ":") ||
+            trimmed.startsWith("export const " + name + "=")) {
+            return true;
+        }
+
+        // export { name } or export { ..., name, ... }
+        if (trimmed.startsWith("export {") || trimmed.startsWith("export{")) {
+            let braceStart = trimmed.indexOf("{");
+            let braceEnd = trimmed.indexOf("}");
+            if (braceStart >= 0 && braceEnd > braceStart) {
+                let namesStr = trimmed.substring(braceStart + 1, braceEnd);
+                let names = namesStr.split(",");
+                for (let ni = 0; ni < names.length; ni = ni + 1) {
+                    let n = names[ni].trim();
+                    // Handle "x as y"
+                    let asIdx = n.indexOf(" as ");
+                    if (asIdx >= 0) {
+                        n = n.substring(0, asIdx).trim();
+                    }
+                    if (n == name) return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Find the line number where a new import should be inserted.
+ * Returns the line after the last existing import, or 0 if none.
+ */
+function findImportInsertLine(content: string): number {
+    let lines = content.split("\n");
+    let lastImportLine = -1;
+
+    for (let i = 0; i < lines.length; i = i + 1) {
+        let trimmed = lines[i].trim();
+        if (trimmed.startsWith("import ")) {
+            lastImportLine = i;
+        } else if (trimmed != "" && !trimmed.startsWith("//") && !trimmed.startsWith("/*") && lastImportLine >= 0) {
+            break;
+        }
+    }
+
+    if (lastImportLine >= 0) {
+        return lastImportLine + 1;
+    }
+    return 0;
+}
+
+/**
+ * Find unused import names on a given import line.
+ */
+function findUnusedImportNames(importLine: string, content: string, importLineNum: number): string[] {
+    let unused: string[] = [];
+
+    let braceStart = importLine.indexOf("{");
+    let braceEnd = importLine.indexOf("}");
+    if (braceStart < 0 || braceEnd < 0) return unused;
+
+    let namesStr = importLine.substring(braceStart + 1, braceEnd);
+    let names = namesStr.split(",");
+
+    let lines = content.split("\n");
+
+    for (let ni = 0; ni < names.length; ni = ni + 1) {
+        let name = names[ni].trim();
+        if (name == "") continue;
+
+        // Handle "x as y"
+        let asIdx = name.indexOf(" as ");
+        if (asIdx >= 0) {
+            name = name.substring(asIdx + 4).trim();
+        }
+
+        // Check if name appears elsewhere in the document (excluding the import line)
+        let used = false;
+        for (let li = 0; li < lines.length; li = li + 1) {
+            if (li == importLineNum) continue;
+            let line = lines[li];
+
+            // Manual search for word boundary match
+            for (let j = 0; j <= line.length - name.length; j = j + 1) {
+                let match = true;
+                for (let k = 0; k < name.length; k = k + 1) {
+                    if (line[j + k] != name[k]) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) {
+                    let validStart = true;
+                    let validEnd = true;
+                    if (j > 0) {
+                        let before = line[j - 1];
+                        if (isIdentChar(before)) validStart = false;
+                    }
+                    let afterIdx = j + name.length;
+                    if (afterIdx < line.length) {
+                        let after = line[afterIdx];
+                        if (isIdentChar(after)) validEnd = false;
+                    }
+                    if (validStart && validEnd) {
+                        used = true;
+                        break;
+                    }
+                }
+            }
+            if (used) break;
+        }
+
+        if (!used) {
+            unused.push(name);
+        }
+    }
+
+    return unused;
+}
+
+/**
+ * Build a WorkspaceEdit to remove a line.
+ */
+function buildRemoveLineEdit(uri: string, lineNum: number, lines: string[]): any {
+    let changes: any = {};
+    changes[uri] = [{
+        range: {
+            start: { line: lineNum, character: 0 },
+            end: { line: lineNum + 1, character: 0 }
+        },
+        newText: ""
+    }];
+    return changes;
+}
+
+/**
+ * Build a WorkspaceEdit to extract selected text into a variable.
+ */
+function buildExtractVariableEdit(uri: string, selectedText: string, range: any, lines: string[]): any {
+    let changes: any = {};
+    let line = range.start.line;
+
+    // Determine indentation of current line
+    let indent = "";
+    let lineText = lines[line];
+    for (let i = 0; i < lineText.length; i = i + 1) {
+        let c = lineText[i];
+        if (c == " " || c == "\t") {
+            indent = indent + c;
+        } else {
+            break;
+        }
+    }
+
+    let varDecl = indent + "let extracted = " + selectedText.trim() + ";\n";
+
+    changes[uri] = [
+        // Insert variable declaration before current line
+        {
+            range: {
+                start: { line: line, character: 0 },
+                end: { line: line, character: 0 }
+            },
+            newText: varDecl
+        },
+        // Replace selection with variable name
+        {
+            range: range,
+            newText: "extracted"
+        }
+    ];
+    return changes;
+}
+
+/**
+ * Compute a relative path from one file to another.
+ */
+function computeRelativePath(fromPath: string, toPath: string): string {
+    // Split into parts
+    let fromParts = splitPath(fromPath);
+    let toParts = splitPath(toPath);
+
+    // Remove filename from fromPath (keep directory)
+    fromParts.pop();
+
+    // Find common prefix length
+    let common = 0;
+    let maxCommon = fromParts.length;
+    if (toParts.length < maxCommon) maxCommon = toParts.length;
+
+    for (let i = 0; i < maxCommon; i = i + 1) {
+        if (fromParts[i] == toParts[i]) {
+            common = common + 1;
+        } else {
+            break;
+        }
+    }
+
+    // Build relative path
+    let ups = fromParts.length - common;
+    let result = "";
+
+    if (ups == 0) {
+        result = "./";
+    } else {
+        for (let i = 0; i < ups; i = i + 1) {
+            result = result + "../";
+        }
+    }
+
+    for (let i = common; i < toParts.length; i = i + 1) {
+        if (i > common) {
+            result = result + "/";
+        }
+        result = result + toParts[i];
+    }
+
+    return result;
+}
+
+/**
+ * Split a path by "/".
+ */
+function splitPath(path: string): string[] {
+    let parts: string[] = [];
+    let current = "";
+    for (let i = 0; i < path.length; i = i + 1) {
+        let c = path[i];
+        if (c == "/") {
+            if (current != "") {
+                parts.push(current);
+            }
+            current = "";
+        } else {
+            current = current + c;
+        }
+    }
+    if (current != "") {
+        parts.push(current);
+    }
+    return parts;
+}
+
+/**
+ * Check if a character is part of an identifier.
+ */
+function isIdentChar(c: string): boolean {
+    return (c >= "a" && c <= "z") ||
+           (c >= "A" && c <= "Z") ||
+           (c >= "0" && c <= "9") ||
+           c == "_" || c == "$";
+}
+
+export { handleCodeAction };
