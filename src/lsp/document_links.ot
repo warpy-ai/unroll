@@ -1,0 +1,123 @@
+// LSP Document Links Handler
+// Makes import paths Cmd+clickable to navigate to the imported file.
+
+import { sendResponse } from "./transport.ot";
+import { DocumentStore, uriToPath, pathToUri } from "./documents.ot";
+
+/**
+ * Handle textDocument/documentLink request.
+ * Returns DocumentLink[] for import paths.
+ */
+function handleDocumentLink(id: any, params: any, documents: DocumentStore): void {
+    let uri = params.textDocument.uri;
+    let content = documents.get(uri);
+    if (content == null) {
+        sendResponse(id, []);
+        return;
+    }
+
+    let links: any[] = [];
+    let lines = content.split("\n");
+    let currentPath = uriToPath(uri);
+
+    for (let i = 0; i < lines.length; i = i + 1) {
+        let trimmed = lines[i].trim();
+        if (!trimmed.startsWith("import ")) continue;
+
+        // Find the string literal with the path
+        let line = lines[i];
+        let link = extractImportLink(line, i, currentPath);
+        if (link != null) {
+            links.push(link);
+        }
+    }
+
+    sendResponse(id, links);
+}
+
+/**
+ * Extract a DocumentLink from an import line.
+ * Finds the quoted path and resolves it to a target URI.
+ */
+function extractImportLink(line: string, lineNum: number, currentPath: string): any {
+    // Find "from" keyword
+    let fromIdx = line.indexOf(" from ");
+    if (fromIdx < 0) return null;
+
+    let afterFrom = line.substring(fromIdx + 6).trim();
+
+    // Find the quoted string
+    let quoteChar = "";
+    let quoteStart = -1;
+
+    if (afterFrom.startsWith("\"")) {
+        quoteChar = "\"";
+    } else if (afterFrom.startsWith("'")) {
+        quoteChar = "'";
+    }
+    if (quoteChar == "") return null;
+
+    // Find absolute position in line
+    let pathStartInLine = fromIdx + 6;
+    // Skip whitespace
+    while (pathStartInLine < line.length && (line[pathStartInLine] == " " || line[pathStartInLine] == "\t")) {
+        pathStartInLine = pathStartInLine + 1;
+    }
+    // Skip opening quote
+    pathStartInLine = pathStartInLine + 1;
+
+    let rest = afterFrom.substring(1);
+    let endQuote = rest.indexOf(quoteChar);
+    if (endQuote < 0) return null;
+
+    let importPath = rest.substring(0, endQuote);
+    if (importPath == "") return null;
+
+    let pathEndInLine = pathStartInLine + importPath.length;
+
+    // Resolve the path
+    let resolved = resolveImportPath(importPath, currentPath);
+    if (resolved == "") return null;
+
+    // Check if file exists
+    if (!fs.existsSync(resolved)) return null;
+
+    return {
+        range: {
+            start: { line: lineNum, character: pathStartInLine },
+            end: { line: lineNum, character: pathEndInLine }
+        },
+        target: pathToUri(resolved)
+    };
+}
+
+/**
+ * Resolve an import path relative to the current file.
+ */
+function resolveImportPath(importPath: string, currentPath: string): string {
+    let lastSlash = currentPath.lastIndexOf("/");
+    if (lastSlash < 0) return "";
+    let dir = currentPath.substring(0, lastSlash);
+
+    if (importPath.startsWith("./")) {
+        return dir + "/" + importPath.substring(2);
+    }
+
+    if (importPath.startsWith("../")) {
+        let parts = importPath;
+        let base = dir;
+        while (parts.startsWith("../")) {
+            parts = parts.substring(3);
+            let parentSlash = base.lastIndexOf("/");
+            if (parentSlash >= 0) {
+                base = base.substring(0, parentSlash);
+            }
+        }
+        return base + "/" + parts;
+    }
+
+    // Absolute or non-relative path
+    return "";
+}
+
+export { handleDocumentLink };

@@ -1,0 +1,331 @@
+// LSP Inlay Hints Handler
+// Shows parameter names at call sites and type annotations inline.
+
+import { sendResponse } from "./transport.ot";
+import { DocumentStore, uriToPath } from "./documents.ot";
+import { SymbolIndex, SymbolInfo } from "./symbols.ot";
+
+// InlayHintKind
+let IHK_TYPE = 1;
+let IHK_PARAMETER = 2;
+
+/**
+ * Handle textDocument/inlayHint request.
+ * Returns InlayHint[] for the requested range.
+ */
+function handleInlayHint(id: any, params: any, documents: DocumentStore, symbols: SymbolIndex): void {
+    let uri = params.textDocument.uri;
+    let range = params.range;
+
+    let content = documents.get(uri);
+    if (content == null) {
+        sendResponse(id, []);
+        return;
+    }
+
+    let lines = content.split("\n");
+    let startLine = range.start.line;
+    let endLine = range.end.line;
+    if (startLine < 0) startLine = 0;
+    if (endLine >= lines.length) endLine = lines.length - 1;
+
+    let hints: any[] = [];
+
+    for (let i = startLine; i <= endLine; i = i + 1) {
+        let lineText = lines[i];
+        findCallHints(lineText, i, content, uri, symbols, hints);
+    }
+
+    sendResponse(id, hints);
+}
+
+/**
+ * Find function calls in a line and generate parameter name hints.
+ */
+function findCallHints(lineText: string, lineNum: number, content: string, uri: string, symbols: SymbolIndex, hints: any[]): void {
+    // Scan for patterns: identifier( that look like function calls
+    let i = 0;
+    while (i < lineText.length) {
+        let c = lineText[i];
+
+        // Skip strings
+        if (c == "\"" || c == "'" || c == "`") {
+            let quote = c;
+            i = i + 1;
+            while (i < lineText.length && lineText[i] != quote) {
+                if (lineText[i] == "\\") i = i + 1;
+                i = i + 1;
+            }
+            i = i + 1;
+            continue;
+        }
+
+        // Skip line comments
+        if (c == "/" && i + 1 < lineText.length && lineText[i + 1] == "/") {
+            break;
+        }
+
+        // Look for identifier followed by (
+        if (isIdentStart(c)) {
+            let nameStart = i;
+            while (i < lineText.length && isIdentChar(lineText[i])) {
+                i = i + 1;
+            }
+            let funcName = lineText.substring(nameStart, i);
+
+            // Skip whitespace
+            let afterName = i;
+            while (afterName < lineText.length && (lineText[afterName] == " " || lineText[afterName] == "\t")) {
+                afterName = afterName + 1;
+            }
+
+            if (afterName < lineText.length && lineText[afterName] == "(") {
+                // Skip keywords that look like calls
+                if (!isCallKeyword(funcName)) {
+                    // Find the function's parameter names
+                    let paramNames = resolveParamNames(funcName, content, uri, symbols);
+                    if (paramNames.length > 0) {
+                        // Parse the arguments to find their positions
+                        let argPositions = findArgPositions(lineText, afterName);
+                        // Add hints for each argument
+                        for (let ai = 0; ai < argPositions.length; ai = ai + 1) {
+                            if (ai >= paramNames.length) break;
+                            let argPos = argPositions[ai];
+                            let argText = lineText.substring(argPos.start, argPos.end).trim();
+
+                            // Don't add hint if the argument is already the parameter name
+                            if (argText == paramNames[ai]) continue;
+                            // Don't add hint for simple literals that are obvious
+                            // But do add for variables, expressions, etc.
+                            if (argText == "true" || argText == "false" || argText == "null" || argText == "undefined") continue;
+
+                            hints.push({
+                                position: { line: lineNum, character: argPos.start },
+                                label: paramNames[ai] + ":",
+                                kind: IHK_PARAMETER,
+                                paddingRight: true
+                            });
+                        }
+                    }
+                }
+            }
+            continue;
+        }
+
+        i = i + 1;
+    }
+}
+
+/**
+ * Find argument positions in a function call starting at the open paren.
+ * Returns array of { start, end } character positions.
+ */
+function findArgPositions(lineText: string, parenPos: number): any[] {
+    let positions: any[] = [];
+    let depth = 0;
+    let argStart = parenPos + 1;
+    let i = parenPos;
+
+    // Skip leading whitespace for first arg
+    while (argStart < lineText.length && (lineText[argStart] == " " || lineText[argStart] == "\t")) {
+        argStart = argStart + 1;
+    }
+
+    i = parenPos;
+    while (i < lineText.length) {
+        let c = lineText[i];
+
+        // Skip strings
+        if (c == "\"" || c == "'" || c == "`") {
+            let quote = c;
+            i = i + 1;
+            while (i < lineText.length && lineText[i] != quote) {
+                if (lineText[i] == "\\") i = i + 1;
+                i = i + 1;
+            }
+            i = i + 1;
+            continue;
+        }
+
+        if (c == "(" || c == "[" || c == "{") {
+            depth = depth + 1;
+        } else if (c == ")" || c == "]" || c == "}") {
+            depth = depth - 1;
+            if (depth == 0) {
+                // End of call
+                if (i > argStart) {
+                    positions.push({ start: argStart, end: i });
+                }
+                break;
+            }
+        } else if (c == "," && depth == 1) {
+            positions.push({ start: argStart, end: i });
+            argStart = i + 1;
+            // Skip whitespace after comma
+            while (argStart < lineText.length && (lineText[argStart] == " " || lineText[argStart] == "\t")) {
+                argStart = argStart + 1;
+            }
+        }
+
+        i = i + 1;
+    }
+
+    return positions;
+}
+
+/**
+ * Resolve parameter names for a function from the symbol index or current document.
+ */
+function resolveParamNames(funcName: string, content: string, uri: string, symbols: SymbolIndex): string[] {
+    // Search symbol index first
+    let matches = symbols.findByName(funcName);
+    for (let mi = 0; mi < matches.length; mi = mi + 1) {
+        let sym = matches[mi];
+        if (sym.kind == "function" && sym.detail != "") {
+            let names = extractParamNames(sym.detail);
+            if (names.length > 0) return names;
+        }
+    }
+
+    // Fallback: scan current document
+    let lines = content.split("\n");
+    for (let i = 0; i < lines.length; i = i + 1) {
+        let trimmed = lines[i].trim();
+        let rest = trimmed;
+        if (rest.startsWith("export ")) rest = rest.substring(7).trim();
+        if (rest.startsWith("async ")) rest = rest.substring(6).trim();
+
+        if (rest.startsWith("function " + funcName + "(") || rest.startsWith("function " + funcName + "<")) {
+            let names = extractParamNames(rest);
+            if (names.length > 0) return names;
+        }
+    }
+
+    return [];
+}
+
+/**
+ * Extract parameter names from a function signature string.
+ * E.g., "function foo(a: string, b: number): void" → ["a", "b"]
+ */
+function extractParamNames(signature: string): string[] {
+    let names: string[] = [];
+
+    let parenStart = signature.indexOf("(");
+    if (parenStart < 0) return names;
+
+    // Find matching closing paren
+    let depth = 0;
+    let parenEnd = -1;
+    for (let i = parenStart; i < signature.length; i = i + 1) {
+        let c = signature[i];
+        if (c == "(") depth = depth + 1;
+        else if (c == ")") {
+            depth = depth - 1;
+            if (depth == 0) {
+                parenEnd = i;
+                break;
+            }
+        }
+    }
+    if (parenEnd < 0) return names;
+
+    let paramsStr = signature.substring(parenStart + 1, parenEnd).trim();
+    if (paramsStr == "") return names;
+
+    // Split by commas, respecting nested < >
+    let parts: string[] = [];
+    let current = "";
+    let angleDepth = 0;
+
+    for (let i = 0; i < paramsStr.length; i = i + 1) {
+        let c = paramsStr[i];
+        if (c == "<") {
+            angleDepth = angleDepth + 1;
+            current = current + c;
+        } else if (c == ">") {
+            angleDepth = angleDepth - 1;
+            current = current + c;
+        } else if (c == "," && angleDepth == 0) {
+            parts.push(current.trim());
+            current = "";
+        } else {
+            current = current + c;
+        }
+    }
+    if (current.trim() != "") {
+        parts.push(current.trim());
+    }
+
+    // Extract just the name from each "name: type" pair
+    for (let pi = 0; pi < parts.length; pi = pi + 1) {
+        let param = parts[pi];
+        let colonIdx = param.indexOf(":");
+        let name = "";
+        if (colonIdx > 0) {
+            name = param.substring(0, colonIdx).trim();
+        } else {
+            name = extractIdent(param);
+        }
+        if (name != "") {
+            names.push(name);
+        }
+    }
+
+    return names;
+}
+
+/**
+ * Check if a string starts with an identifier character (a-z, A-Z, _, $).
+ */
+function isIdentStart(c: string): boolean {
+    return (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || c == "_" || c == "$";
+}
+
+/**
+ * Check if a character is part of an identifier.
+ */
+function isIdentChar(c: string): boolean {
+    return (c >= "a" && c <= "z") ||
+           (c >= "A" && c <= "Z") ||
+           (c >= "0" && c <= "9") ||
+           c == "_" || c == "$";
+}
+
+/**
+ * Check if a name is a keyword that looks like a function call but isn't.
+ */
+function isCallKeyword(name: string): boolean {
+    if (name == "if") return true;
+    if (name == "for") return true;
+    if (name == "while") return true;
+    if (name == "switch") return true;
+    if (name == "catch") return true;
+    if (name == "return") return true;
+    if (name == "typeof") return true;
+    if (name == "instanceof") return true;
+    if (name == "new") return true;
+    if (name == "function") return true;
+    if (name == "class") return true;
+    return false;
+}
+
+/**
+ * Extract an identifier from the start of a string.
+ */
+function extractIdent(s: string): string {
+    let result = "";
+    for (let i = 0; i < s.length; i = i + 1) {
+        let c = s[i];
+        if ((c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || c == "_" || c == "$") {
+            result = result + c;
+        } else if (result.length > 0 && c >= "0" && c <= "9") {
+            result = result + c;
+        } else {
+            break;
+        }
+    }
+    return result;
+}
+
+export { handleInlayHint };

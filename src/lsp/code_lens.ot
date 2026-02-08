@@ -1,0 +1,214 @@
+// LSP Code Lens Handler
+// Shows reference counts above functions, classes, and interfaces.
+
+import { sendResponse } from "./transport.ot";
+import { DocumentStore, pathToUri } from "./documents.ot";
+import { SymbolIndex } from "./symbols.ot";
+import { discoverOtFiles } from "./references.ot";
+
+/**
+ * Handle textDocument/codeLens request.
+ * Returns CodeLens[] with reference counts for top-level symbols.
+ */
+function handleCodeLens(id: any, params: any, documents: DocumentStore, symbols: SymbolIndex, workspaceRoot: string): void {
+    let uri = params.textDocument.uri;
+    let content = documents.get(uri);
+    if (content == null) {
+        sendResponse(id, []);
+        return;
+    }
+
+    let lenses: any[] = [];
+    let lines = content.split("\n");
+
+    // Find top-level declarations
+    for (let i = 0; i < lines.length; i = i + 1) {
+        let trimmed = lines[i].trim();
+        if (trimmed == "" || trimmed.startsWith("//") || trimmed.startsWith("/*")) {
+            continue;
+        }
+
+        let rest = trimmed;
+        if (rest.startsWith("export ")) {
+            rest = rest.substring(7).trim();
+        }
+        if (rest.startsWith("async ")) {
+            rest = rest.substring(6).trim();
+        }
+
+        let name = "";
+        let kind = "";
+
+        if (rest.startsWith("function ")) {
+            name = extractIdent(rest.substring(9).trim());
+            kind = "function";
+        } else if (rest.startsWith("class ")) {
+            name = extractIdent(rest.substring(6).trim());
+            kind = "class";
+        } else if (rest.startsWith("interface ")) {
+            name = extractIdent(rest.substring(10).trim());
+            kind = "interface";
+        }
+
+        if (name == "" || kind == "") continue;
+
+        // Count references across workspace
+        let refCount = countReferences(name, uri, documents, workspaceRoot);
+
+        let col = lines[i].indexOf(name);
+        if (col < 0) col = 0;
+
+        let title = "";
+        if (refCount == 0) {
+            title = "0 references";
+        } else if (refCount == 1) {
+            title = "1 reference";
+        } else {
+            title = refCount + " references";
+        }
+
+        lenses.push({
+            range: {
+                start: { line: i, character: col },
+                end: { line: i, character: col + name.length }
+            },
+            command: {
+                title: title,
+                command: "editor.action.findReferences",
+                arguments: [uri, { line: i, character: col }]
+            }
+        });
+    }
+
+    sendResponse(id, lenses);
+}
+
+/**
+ * Count references to a name across open documents and workspace files.
+ * Excludes the declaration itself.
+ */
+function countReferences(name: string, declUri: string, documents: DocumentStore, workspaceRoot: string): number {
+    let count = 0;
+
+    // Search open documents
+    let allUris = documents.getAllUris();
+    for (let ui = 0; ui < allUris.length; ui = ui + 1) {
+        let docUri = allUris[ui];
+        let docContent = documents.get(docUri);
+        if (docContent != null) {
+            count = count + countWordInContent(name, docContent);
+        }
+    }
+
+    // Search workspace files not currently open
+    if (workspaceRoot != "") {
+        let files: string[] = [];
+        discoverOtFiles(workspaceRoot, files);
+
+        for (let fi = 0; fi < files.length; fi = fi + 1) {
+            let filePath = files[fi];
+            let fileUri = pathToUri(filePath);
+            if (documents.get(fileUri) != null) {
+                continue;
+            }
+
+            if (fs.existsSync(filePath)) {
+                let fileContent = fs.readFileSync(filePath);
+                if (fileContent != null) {
+                    count = count + countWordInContent(name, fileContent);
+                }
+            }
+        }
+    }
+
+    // Subtract 1 for the declaration itself
+    if (count > 0) {
+        count = count - 1;
+    }
+
+    return count;
+}
+
+/**
+ * Count whole-word occurrences of a name in content.
+ */
+function countWordInContent(word: string, content: string): number {
+    let count = 0;
+    let lines = content.split("\n");
+
+    for (let i = 0; i < lines.length; i = i + 1) {
+        let line = lines[i];
+        let searchFrom = 0;
+
+        while (searchFrom <= line.length - word.length) {
+            let found = -1;
+            for (let j = searchFrom; j <= line.length - word.length; j = j + 1) {
+                let match = true;
+                for (let k = 0; k < word.length; k = k + 1) {
+                    if (line[j + k] != word[k]) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) {
+                    found = j;
+                    break;
+                }
+            }
+
+            if (found < 0) break;
+
+            let validStart = true;
+            let validEnd = true;
+
+            if (found > 0) {
+                let before = line[found - 1];
+                if (isIdentChar(before)) validStart = false;
+            }
+
+            let afterIdx = found + word.length;
+            if (afterIdx < line.length) {
+                let after = line[afterIdx];
+                if (isIdentChar(after)) validEnd = false;
+            }
+
+            if (validStart && validEnd) {
+                count = count + 1;
+            }
+
+            searchFrom = found + word.length;
+        }
+    }
+
+    return count;
+}
+
+/**
+ * Check if a character is part of an identifier.
+ */
+function isIdentChar(c: string): boolean {
+    return (c >= "a" && c <= "z") ||
+           (c >= "A" && c <= "Z") ||
+           (c >= "0" && c <= "9") ||
+           c == "_" || c == "$";
+}
+
+/**
+ * Extract an identifier from the start of a string.
+ */
+function extractIdent(s: string): string {
+    let result = "";
+    for (let i = 0; i < s.length; i = i + 1) {
+        let c = s[i];
+        if ((c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || c == "_" || c == "$") {
+            result = result + c;
+        } else if (result.length > 0 && c >= "0" && c <= "9") {
+            result = result + c;
+        } else {
+            break;
+        }
+    }
+    return result;
+}
+
+export { handleCodeLens };

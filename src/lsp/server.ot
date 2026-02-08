@@ -18,6 +18,10 @@ import { handleDocumentHighlight } from "./highlight.ot";
 import { handleCodeAction } from "./code_actions.ot";
 import { handleFoldingRange } from "./folding.ot";
 import { handleFormatting } from "./formatting.ot";
+import { handleInlayHint } from "./inlay_hints.ot";
+import { handleCodeLens } from "./code_lens.ot";
+import { handleDocumentLink } from "./document_links.ot";
+import { handleSemanticTokensFull, getSemanticTokensLegend } from "./semantic_tokens.ot";
 
 /**
  * Run the LSP server. Blocks reading from stdin until shutdown/EOF.
@@ -161,6 +165,26 @@ function runLsp(args: string[]): number {
             continue;
         }
 
+        if (method == "textDocument/inlayHint") {
+            handleInlayHint(id, params, documents, symbols);
+            continue;
+        }
+
+        if (method == "textDocument/codeLens") {
+            handleCodeLens(id, params, documents, symbols, workspaceRoot);
+            continue;
+        }
+
+        if (method == "textDocument/documentLink") {
+            handleDocumentLink(id, params, documents);
+            continue;
+        }
+
+        if (method == "textDocument/semanticTokens/full") {
+            handleSemanticTokensFull(id, params, documents, symbols);
+            continue;
+        }
+
         // Unknown request — respond with method not found
         if (id != null) {
             sendError(id, -32601, "Method not found: " + method);
@@ -196,7 +220,18 @@ function handleInitialize(id: any, params: any): void {
             documentHighlightProvider: true,
             codeActionProvider: true,
             foldingRangeProvider: true,
-            documentFormattingProvider: true
+            documentFormattingProvider: true,
+            inlayHintProvider: true,
+            codeLensProvider: {
+                resolveProvider: false
+            },
+            documentLinkProvider: {
+                resolveProvider: false
+            },
+            semanticTokensProvider: {
+                full: true,
+                legend: getSemanticTokensLegend()
+            }
         },
         serverInfo: {
             name: "oite-lsp",

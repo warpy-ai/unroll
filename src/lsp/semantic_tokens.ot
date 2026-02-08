@@ -1,0 +1,437 @@
+// LSP Semantic Tokens Handler
+// Provides rich semantic highlighting for .ot files.
+// Uses delta-encoded token format as per LSP spec.
+
+import { sendResponse } from "./transport.ot";
+import { DocumentStore } from "./documents.ot";
+import { SymbolIndex } from "./symbols.ot";
+
+// Token type indices (must match legend in capabilities)
+let TT_COMMENT = 0;
+let TT_KEYWORD = 1;
+let TT_STRING = 2;
+let TT_NUMBER = 3;
+let TT_FUNCTION = 4;
+let TT_VARIABLE = 5;
+let TT_CLASS = 6;
+let TT_INTERFACE = 7;
+let TT_TYPE = 8;
+let TT_PARAMETER = 9;
+let TT_PROPERTY = 10;
+let TT_OPERATOR = 11;
+let TT_NAMESPACE = 12;
+
+// Token modifier bit flags
+let TM_DECLARATION = 1;
+let TM_READONLY = 2;
+
+/**
+ * Get the semantic token legend for capability registration.
+ */
+function getSemanticTokensLegend(): any {
+    return {
+        tokenTypes: [
+            "comment",
+            "keyword",
+            "string",
+            "number",
+            "function",
+            "variable",
+            "class",
+            "interface",
+            "type",
+            "parameter",
+            "property",
+            "operator",
+            "namespace"
+        ],
+        tokenModifiers: [
+            "declaration",
+            "readonly"
+        ]
+    };
+}
+
+/**
+ * Handle textDocument/semanticTokens/full request.
+ * Returns encoded semantic tokens for the entire document.
+ */
+function handleSemanticTokensFull(id: any, params: any, documents: DocumentStore, symbols: SymbolIndex): void {
+    let uri = params.textDocument.uri;
+    let content = documents.get(uri);
+    if (content == null) {
+        sendResponse(id, { data: [] });
+        return;
+    }
+
+    let tokens = tokenizeDocument(content, uri, symbols);
+    let encoded = encodeTokens(tokens);
+
+    sendResponse(id, { data: encoded });
+}
+
+/**
+ * A raw token before delta encoding.
+ */
+interface RawToken {
+    line: number;
+    start: number;
+    length: number;
+    type: number;
+    modifiers: number;
+}
+
+/**
+ * Tokenize a document into raw semantic tokens.
+ */
+function tokenizeDocument(content: string, uri: string, symbols: SymbolIndex): RawToken[] {
+    let tokens: RawToken[] = [];
+    let lines = content.split("\n");
+    let inBlockComment = false;
+    let inClass = false;
+    let braceDepth = 0;
+    let classStartDepth = 0;
+
+    for (let i = 0; i < lines.length; i = i + 1) {
+        let line = lines[i];
+        let j = 0;
+
+        // Handle continuing block comment
+        if (inBlockComment) {
+            let endIdx = line.indexOf("*/");
+            if (endIdx >= 0) {
+                tokens.push({ line: i, start: 0, length: endIdx + 2, type: TT_COMMENT, modifiers: 0 });
+                inBlockComment = false;
+                j = endIdx + 2;
+            } else {
+                tokens.push({ line: i, start: 0, length: line.length, type: TT_COMMENT, modifiers: 0 });
+                continue;
+            }
+        }
+
+        while (j < line.length) {
+            let c = line[j];
+
+            // Skip whitespace
+            if (c == " " || c == "\t" || c == "\r") {
+                j = j + 1;
+                continue;
+            }
+
+            // Line comment
+            if (c == "/" && j + 1 < line.length && line[j + 1] == "/") {
+                tokens.push({ line: i, start: j, length: line.length - j, type: TT_COMMENT, modifiers: 0 });
+                break;
+            }
+
+            // Block comment
+            if (c == "/" && j + 1 < line.length && line[j + 1] == "*") {
+                let endIdx = line.indexOf("*/", j + 2);
+                if (endIdx >= 0) {
+                    tokens.push({ line: i, start: j, length: endIdx + 2 - j, type: TT_COMMENT, modifiers: 0 });
+                    j = endIdx + 2;
+                } else {
+                    tokens.push({ line: i, start: j, length: line.length - j, type: TT_COMMENT, modifiers: 0 });
+                    inBlockComment = true;
+                    break;
+                }
+                continue;
+            }
+
+            // String literals
+            if (c == "\"" || c == "'" || c == "`") {
+                let quote = c;
+                let start = j;
+                j = j + 1;
+                while (j < line.length && line[j] != quote) {
+                    if (line[j] == "\\") j = j + 1;
+                    j = j + 1;
+                }
+                if (j < line.length) j = j + 1;
+                tokens.push({ line: i, start: start, length: j - start, type: TT_STRING, modifiers: 0 });
+                continue;
+            }
+
+            // Numbers
+            if (c >= "0" && c <= "9") {
+                let start = j;
+                while (j < line.length && ((line[j] >= "0" && line[j] <= "9") || line[j] == "." || line[j] == "x" || line[j] == "X" ||
+                       (line[j] >= "a" && line[j] <= "f") || (line[j] >= "A" && line[j] <= "F"))) {
+                    j = j + 1;
+                }
+                tokens.push({ line: i, start: start, length: j - start, type: TT_NUMBER, modifiers: 0 });
+                continue;
+            }
+
+            // Track brace depth for class context
+            if (c == "{") {
+                braceDepth = braceDepth + 1;
+                j = j + 1;
+                continue;
+            }
+            if (c == "}") {
+                braceDepth = braceDepth - 1;
+                if (inClass && braceDepth <= classStartDepth) {
+                    inClass = false;
+                }
+                j = j + 1;
+                continue;
+            }
+
+            // Identifiers and keywords
+            if (isIdentStart(c)) {
+                let start = j;
+                while (j < line.length && isIdentChar(line[j])) {
+                    j = j + 1;
+                }
+                let word = line.substring(start, j);
+                let tokenInfo = classifyWord(word, line, start, j, inClass, symbols, uri);
+                if (tokenInfo.type >= 0) {
+                    tokens.push({ line: i, start: start, length: word.length, type: tokenInfo.type, modifiers: tokenInfo.modifiers });
+                }
+
+                // Track class context
+                if (word == "class" || word == "interface") {
+                    inClass = true;
+                    classStartDepth = braceDepth;
+                }
+                continue;
+            }
+
+            // Skip other characters (operators, punctuation)
+            j = j + 1;
+        }
+    }
+
+    return tokens;
+}
+
+/**
+ * Classify a word as a specific token type.
+ */
+function classifyWord(word: string, line: string, start: number, end: number, inClass: boolean, symbols: SymbolIndex, uri: string): any {
+    // Keywords
+    if (isKeyword(word)) {
+        return { type: TT_KEYWORD, modifiers: 0 };
+    }
+
+    // Check what follows the word
+    let afterWord = "";
+    let k = end;
+    while (k < line.length && (line[k] == " " || line[k] == "\t")) {
+        k = k + 1;
+    }
+    if (k < line.length) {
+        afterWord = line.substring(k);
+    }
+
+    // Check what precedes the word
+    let beforeStart = start - 1;
+    while (beforeStart >= 0 && (line[beforeStart] == " " || line[beforeStart] == "\t")) {
+        beforeStart = beforeStart - 1;
+    }
+    let beforeChar = "";
+    if (beforeStart >= 0) {
+        beforeChar = line[beforeStart];
+    }
+
+    // Property access: preceded by .
+    if (beforeChar == ".") {
+        if (afterWord.startsWith("(")) {
+            return { type: TT_FUNCTION, modifiers: 0 };
+        }
+        return { type: TT_PROPERTY, modifiers: 0 };
+    }
+
+    // Function call or declaration
+    if (afterWord.startsWith("(")) {
+        // Check if this is a declaration
+        let trimmed = line.trim();
+        if (trimmed.startsWith("function ") || trimmed.startsWith("export function ") ||
+            trimmed.startsWith("async function ") || trimmed.startsWith("export async function ")) {
+            return { type: TT_FUNCTION, modifiers: TM_DECLARATION };
+        }
+        return { type: TT_FUNCTION, modifiers: 0 };
+    }
+
+    // After "class" keyword
+    let trimmedLine = line.trim();
+    let restLine = trimmedLine;
+    if (restLine.startsWith("export ")) restLine = restLine.substring(7).trim();
+    if (restLine.startsWith("class " + word)) {
+        return { type: TT_CLASS, modifiers: TM_DECLARATION };
+    }
+    if (restLine.startsWith("interface " + word)) {
+        return { type: TT_INTERFACE, modifiers: TM_DECLARATION };
+    }
+
+    // After "new" keyword
+    if (beforeStart >= 2) {
+        let prevWord = extractPrevWord(line, beforeStart + 1);
+        if (prevWord == "new") {
+            return { type: TT_CLASS, modifiers: 0 };
+        }
+        if (prevWord == "extends" || prevWord == "implements") {
+            return { type: TT_CLASS, modifiers: 0 };
+        }
+    }
+
+    // Type annotation context (after : in params or declarations)
+    if (beforeChar == ":") {
+        // Capitalize check - types are typically PascalCase
+        if (word.length > 0 && word[0] >= "A" && word[0] <= "Z") {
+            return { type: TT_TYPE, modifiers: 0 };
+        }
+        // Built-in types
+        if (isBuiltinType(word)) {
+            return { type: TT_TYPE, modifiers: 0 };
+        }
+    }
+
+    // After < in generics
+    if (beforeChar == "<") {
+        if (word.length > 0 && word[0] >= "A" && word[0] <= "Z") {
+            return { type: TT_TYPE, modifiers: 0 };
+        }
+    }
+
+    // PascalCase identifiers are likely classes/types
+    if (word.length > 1 && word[0] >= "A" && word[0] <= "Z") {
+        // Check if known class from symbols
+        let syms = symbols.findByName(word);
+        for (let si = 0; si < syms.length; si = si + 1) {
+            if (syms[si].kind == "class") return { type: TT_CLASS, modifiers: 0 };
+            if (syms[si].kind == "interface") return { type: TT_INTERFACE, modifiers: 0 };
+            if (syms[si].kind == "type") return { type: TT_TYPE, modifiers: 0 };
+        }
+    }
+
+    // Variable declarations
+    if (restLine.startsWith("let " + word) || restLine.startsWith("const " + word)) {
+        let mods = 0;
+        if (restLine.startsWith("const ")) {
+            mods = TM_READONLY;
+        }
+        return { type: TT_VARIABLE, modifiers: mods | TM_DECLARATION };
+    }
+
+    // Default: variable
+    return { type: TT_VARIABLE, modifiers: 0 };
+}
+
+/**
+ * Extract the word immediately before a position (scanning backwards).
+ */
+function extractPrevWord(line: string, pos: number): string {
+    let end = pos;
+    // Skip whitespace
+    while (end > 0 && (line[end - 1] == " " || line[end - 1] == "\t")) {
+        end = end - 1;
+    }
+    let start = end;
+    while (start > 0 && isIdentChar(line[start - 1])) {
+        start = start - 1;
+    }
+    if (start == end) return "";
+    return line.substring(start, end);
+}
+
+/**
+ * Encode raw tokens into LSP delta format.
+ * Each token becomes 5 integers: deltaLine, deltaStartChar, length, tokenType, tokenModifiers.
+ */
+function encodeTokens(tokens: RawToken[]): number[] {
+    let data: number[] = [];
+    let prevLine = 0;
+    let prevStart = 0;
+
+    for (let i = 0; i < tokens.length; i = i + 1) {
+        let token = tokens[i];
+        let deltaLine = token.line - prevLine;
+        let deltaStart = token.start;
+        if (deltaLine == 0) {
+            deltaStart = token.start - prevStart;
+        }
+
+        data.push(deltaLine);
+        data.push(deltaStart);
+        data.push(token.length);
+        data.push(token.type);
+        data.push(token.modifiers);
+
+        prevLine = token.line;
+        prevStart = token.start;
+    }
+
+    return data;
+}
+
+function isIdentStart(c: string): boolean {
+    return (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || c == "_" || c == "$";
+}
+
+function isIdentChar(c: string): boolean {
+    return (c >= "a" && c <= "z") ||
+           (c >= "A" && c <= "Z") ||
+           (c >= "0" && c <= "9") ||
+           c == "_" || c == "$";
+}
+
+function isKeyword(word: string): boolean {
+    if (word == "let") return true;
+    if (word == "const") return true;
+    if (word == "function") return true;
+    if (word == "class") return true;
+    if (word == "interface") return true;
+    if (word == "import") return true;
+    if (word == "export") return true;
+    if (word == "from") return true;
+    if (word == "if") return true;
+    if (word == "else") return true;
+    if (word == "for") return true;
+    if (word == "while") return true;
+    if (word == "return") return true;
+    if (word == "new") return true;
+    if (word == "true") return true;
+    if (word == "false") return true;
+    if (word == "null") return true;
+    if (word == "undefined") return true;
+    if (word == "typeof") return true;
+    if (word == "instanceof") return true;
+    if (word == "void") return true;
+    if (word == "break") return true;
+    if (word == "continue") return true;
+    if (word == "switch") return true;
+    if (word == "case") return true;
+    if (word == "default") return true;
+    if (word == "try") return true;
+    if (word == "catch") return true;
+    if (word == "finally") return true;
+    if (word == "throw") return true;
+    if (word == "async") return true;
+    if (word == "await") return true;
+    if (word == "of") return true;
+    if (word == "in") return true;
+    if (word == "declare") return true;
+    if (word == "type") return true;
+    if (word == "extends") return true;
+    if (word == "implements") return true;
+    if (word == "this") return true;
+    if (word == "super") return true;
+    return false;
+}
+
+function isBuiltinType(word: string): boolean {
+    if (word == "string") return true;
+    if (word == "number") return true;
+    if (word == "boolean") return true;
+    if (word == "void") return true;
+    if (word == "any") return true;
+    if (word == "null") return true;
+    if (word == "undefined") return true;
+    if (word == "object") return true;
+    if (word == "Array") return true;
+    return false;
+}
+
+export { handleSemanticTokensFull, getSemanticTokensLegend };
