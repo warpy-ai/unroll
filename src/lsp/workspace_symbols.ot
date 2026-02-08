@@ -1,0 +1,270 @@
+// LSP Workspace Symbols Handler
+// Provides project-wide symbol search (Cmd+T).
+
+import { sendResponse } from "./transport.ot";
+import { DocumentStore, pathToUri } from "./documents.ot";
+import { SymbolIndex } from "./symbols.ot";
+import { discoverOtFiles } from "./references.ot";
+
+// LSP SymbolKind constants
+let WSK_CLASS = 5;
+let WSK_METHOD = 6;
+let WSK_INTERFACE = 11;
+let WSK_FUNCTION = 12;
+let WSK_VARIABLE = 13;
+let WSK_CONSTANT = 14;
+
+/**
+ * Handle workspace/symbol request.
+ * Returns SymbolInformation[] matching the query across all project files.
+ */
+function handleWorkspaceSymbol(id: any, params: any, documents: DocumentStore, symbols: SymbolIndex, workspaceRoot: string): void {
+    let query = params.query;
+    if (query == null) {
+        query = "";
+    }
+
+    let queryLower = toLower(query);
+    let results: any[] = [];
+    let maxResults = 100;
+
+    // 1. Search open documents first (from symbol index)
+    let allSymbols = symbols.getAll();
+    for (let sym of allSymbols) {
+        if (results.length >= maxResults) break;
+        if (sym.kind == "import") continue;
+
+        if (query == "" || matchesQuery(toLower(sym.name), queryLower)) {
+            results.push(makeSymbolInfo(sym.name, symbolKindForString(sym.kind), sym.uri, sym.line, sym.column, sym.detail));
+        }
+    }
+
+    // 2. Search workspace files not currently open
+    if (workspaceRoot != "" && results.length < maxResults) {
+        let files: string[] = [];
+        discoverOtFiles(workspaceRoot, files);
+
+        for (let fi = 0; fi < files.length; fi = fi + 1) {
+            if (results.length >= maxResults) break;
+            let filePath = files[fi];
+
+            let fileUri = pathToUri(filePath);
+            // Skip if already in symbol index (open document)
+            let existingSyms = symbols.getForUri(fileUri);
+            if (existingSyms.length > 0) {
+                continue;
+            }
+
+            if (!fs.existsSync(filePath)) continue;
+            let content = fs.readFileSync(filePath);
+            if (content == null) continue;
+
+            // Quick scan for symbols
+            let fileSymbols = scanFileForSymbols(content, fileUri);
+            for (let si = 0; si < fileSymbols.length; si = si + 1) {
+                if (results.length >= maxResults) break;
+                let sym = fileSymbols[si];
+                if (query == "" || matchesQuery(toLower(sym.name), queryLower)) {
+                    results.push(sym);
+                }
+            }
+        }
+    }
+
+    sendResponse(id, results);
+}
+
+/**
+ * Check if a name matches the query (case-insensitive substring match).
+ */
+function matchesQuery(nameLower: string, queryLower: string): boolean {
+    if (queryLower == "") return true;
+
+    // Substring match
+    if (nameLower.indexOf(queryLower) >= 0) return true;
+
+    // Fuzzy initial-letter match for camelCase/PascalCase
+    let qi = 0;
+    for (let i = 0; i < nameLower.length; i = i + 1) {
+        if (nameLower[i] == queryLower[qi]) {
+            qi = qi + 1;
+            if (qi >= queryLower.length) return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Quick scan a file's content for top-level symbols.
+ * Returns flat SymbolInformation[] (not hierarchical).
+ */
+function scanFileForSymbols(content: string, uri: string): any[] {
+    let results: any[] = [];
+    let lines = content.split("\n");
+
+    for (let i = 0; i < lines.length; i = i + 1) {
+        let trimmed = lines[i].trim();
+        if (trimmed == "" || trimmed.startsWith("//") || trimmed.startsWith("/*")) {
+            continue;
+        }
+
+        let rest = trimmed;
+        if (rest.startsWith("export ")) {
+            rest = rest.substring(7).trim();
+        }
+
+        // function NAME
+        if (rest.startsWith("async ")) {
+            rest = rest.substring(6).trim();
+        }
+
+        if (rest.startsWith("function ")) {
+            let name = extractIdent(rest.substring(9).trim());
+            if (name != "") {
+                let col = lines[i].indexOf(name);
+                if (col < 0) col = 0;
+                results.push(makeSymbolInfo(name, WSK_FUNCTION, uri, i, col, ""));
+            }
+            continue;
+        }
+
+        // Reset rest after async check
+        rest = trimmed;
+        if (rest.startsWith("export ")) {
+            rest = rest.substring(7).trim();
+        }
+
+        // class NAME
+        if (rest.startsWith("class ")) {
+            let name = extractIdent(rest.substring(6).trim());
+            if (name != "") {
+                let col = lines[i].indexOf(name);
+                if (col < 0) col = 0;
+                results.push(makeSymbolInfo(name, WSK_CLASS, uri, i, col, ""));
+            }
+            continue;
+        }
+
+        // interface NAME
+        if (rest.startsWith("interface ")) {
+            let name = extractIdent(rest.substring(10).trim());
+            if (name != "") {
+                let col = lines[i].indexOf(name);
+                if (col < 0) col = 0;
+                results.push(makeSymbolInfo(name, WSK_INTERFACE, uri, i, col, ""));
+            }
+            continue;
+        }
+
+        // let NAME or const NAME (only top-level)
+        if (rest.startsWith("let ")) {
+            let name = extractIdent(rest.substring(4).trim());
+            if (name != "") {
+                let col = lines[i].indexOf(name);
+                if (col < 0) col = 0;
+                results.push(makeSymbolInfo(name, WSK_VARIABLE, uri, i, col, ""));
+            }
+            continue;
+        }
+
+        if (rest.startsWith("const ")) {
+            let name = extractIdent(rest.substring(6).trim());
+            if (name != "") {
+                let col = lines[i].indexOf(name);
+                if (col < 0) col = 0;
+                results.push(makeSymbolInfo(name, WSK_CONSTANT, uri, i, col, ""));
+            }
+            continue;
+        }
+    }
+
+    return results;
+}
+
+/**
+ * Create a SymbolInformation object (flat, for workspace/symbol).
+ */
+function makeSymbolInfo(name: string, kind: number, uri: string, line: number, col: number, containerName: string): any {
+    return {
+        name: name,
+        kind: kind,
+        location: {
+            uri: uri,
+            range: {
+                start: { line: line, character: col },
+                end: { line: line, character: col + name.length }
+            }
+        },
+        containerName: containerName
+    };
+}
+
+/**
+ * Map string symbol kind to LSP SymbolKind number.
+ */
+function symbolKindForString(kind: string): number {
+    if (kind == "function") return WSK_FUNCTION;
+    if (kind == "class") return WSK_CLASS;
+    if (kind == "interface") return WSK_INTERFACE;
+    if (kind == "variable") return WSK_VARIABLE;
+    return WSK_VARIABLE;
+}
+
+/**
+ * Convert string to lowercase.
+ */
+function toLower(s: string): string {
+    let result = "";
+    for (let i = 0; i < s.length; i = i + 1) {
+        let c = s[i];
+        if (c == "A") { result = result + "a"; }
+        else if (c == "B") { result = result + "b"; }
+        else if (c == "C") { result = result + "c"; }
+        else if (c == "D") { result = result + "d"; }
+        else if (c == "E") { result = result + "e"; }
+        else if (c == "F") { result = result + "f"; }
+        else if (c == "G") { result = result + "g"; }
+        else if (c == "H") { result = result + "h"; }
+        else if (c == "I") { result = result + "i"; }
+        else if (c == "J") { result = result + "j"; }
+        else if (c == "K") { result = result + "k"; }
+        else if (c == "L") { result = result + "l"; }
+        else if (c == "M") { result = result + "m"; }
+        else if (c == "N") { result = result + "n"; }
+        else if (c == "O") { result = result + "o"; }
+        else if (c == "P") { result = result + "p"; }
+        else if (c == "Q") { result = result + "q"; }
+        else if (c == "R") { result = result + "r"; }
+        else if (c == "S") { result = result + "s"; }
+        else if (c == "T") { result = result + "t"; }
+        else if (c == "U") { result = result + "u"; }
+        else if (c == "V") { result = result + "v"; }
+        else if (c == "W") { result = result + "w"; }
+        else if (c == "X") { result = result + "x"; }
+        else if (c == "Y") { result = result + "y"; }
+        else if (c == "Z") { result = result + "z"; }
+        else { result = result + c; }
+    }
+    return result;
+}
+
+/**
+ * Extract an identifier from the start of a string.
+ */
+function extractIdent(s: string): string {
+    let result = "";
+    for (let i = 0; i < s.length; i = i + 1) {
+        let c = s[i];
+        if ((c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || c == "_" || c == "$") {
+            result = result + c;
+        } else if (result.length > 0 && c >= "0" && c <= "9") {
+            result = result + c;
+        } else {
+            break;
+        }
+    }
+    return result;
+}
+
+export { handleWorkspaceSymbol };

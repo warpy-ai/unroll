@@ -1,0 +1,271 @@
+// LSP Rename Handler
+// Provides textDocument/rename and textDocument/prepareRename.
+// Renames a symbol across all open documents and workspace files.
+
+import { sendResponse } from "./transport.ot";
+import { DocumentStore, pathToUri } from "./documents.ot";
+import { SymbolIndex, getWordAtPosition } from "./symbols.ot";
+import { discoverOtFiles } from "./references.ot";
+
+/**
+ * Handle textDocument/prepareRename request.
+ * Returns the range of the word at cursor, or error if not renameable.
+ */
+function handlePrepareRename(id: any, params: any, documents: DocumentStore, symbols: SymbolIndex): void {
+    let uri = params.textDocument.uri;
+    let line = params.position.line;
+    let character = params.position.character;
+
+    let content = documents.get(uri);
+    if (content == null) {
+        sendResponse(id, null);
+        return;
+    }
+
+    let word = getWordAtPosition(content, line, character);
+    if (word == "") {
+        sendResponse(id, null);
+        return;
+    }
+
+    // Check it's not a keyword
+    if (isKeyword(word)) {
+        sendResponse(id, null);
+        return;
+    }
+
+    // Find word start position in the line
+    let lines = content.split("\n");
+    let lineText = lines[line];
+    let wordStart = findWordStart(lineText, character);
+
+    sendResponse(id, {
+        range: {
+            start: { line: line, character: wordStart },
+            end: { line: line, character: wordStart + word.length }
+        },
+        placeholder: word
+    });
+}
+
+/**
+ * Handle textDocument/rename request.
+ * Returns a WorkspaceEdit with all occurrences renamed.
+ */
+function handleRename(id: any, params: any, documents: DocumentStore, symbols: SymbolIndex, workspaceRoot: string): void {
+    let uri = params.textDocument.uri;
+    let line = params.position.line;
+    let character = params.position.character;
+    let newName = params.newName;
+
+    let content = documents.get(uri);
+    if (content == null) {
+        sendResponse(id, null);
+        return;
+    }
+
+    let word = getWordAtPosition(content, line, character);
+    if (word == "" || isKeyword(word)) {
+        sendResponse(id, null);
+        return;
+    }
+
+    if (newName == null || newName == "" || newName == word) {
+        sendResponse(id, null);
+        return;
+    }
+
+    // Collect all edits grouped by URI
+    let editUris: string[] = [];
+    let editLists: any[][] = [];
+
+    // 1. Search all open documents
+    let allUris = documents.getAllUris();
+    for (let ui = 0; ui < allUris.length; ui = ui + 1) {
+        let docUri = allUris[ui];
+        let docContent = documents.get(docUri);
+        if (docContent != null) {
+            let edits = findWordEdits(word, newName, docContent);
+            if (edits.length > 0) {
+                editUris.push(docUri);
+                editLists.push(edits);
+            }
+        }
+    }
+
+    // 2. Search workspace files not currently open
+    if (workspaceRoot != "") {
+        let files: string[] = [];
+        discoverOtFiles(workspaceRoot, files);
+
+        for (let fi = 0; fi < files.length; fi = fi + 1) {
+            let filePath = files[fi];
+            let fileUri = pathToUri(filePath);
+            // Skip if already searched (open document)
+            if (documents.get(fileUri) != null) {
+                continue;
+            }
+
+            if (fs.existsSync(filePath)) {
+                let fileContent = fs.readFileSync(filePath);
+                if (fileContent != null) {
+                    let edits = findWordEdits(word, newName, fileContent);
+                    if (edits.length > 0) {
+                        editUris.push(fileUri);
+                        editLists.push(edits);
+                    }
+                }
+            }
+        }
+    }
+
+    // Build WorkspaceEdit.changes object
+    // LSP expects: { changes: { "uri1": [TextEdit, ...], "uri2": [...] } }
+    let changes: any = {};
+    for (let i = 0; i < editUris.length; i = i + 1) {
+        changes[editUris[i]] = editLists[i];
+    }
+
+    sendResponse(id, { changes: changes });
+}
+
+/**
+ * Find all occurrences of a word in content and return TextEdit[] to replace with newName.
+ */
+function findWordEdits(word: string, newName: string, content: string): any[] {
+    let edits: any[] = [];
+    let lines = content.split("\n");
+
+    for (let i = 0; i < lines.length; i = i + 1) {
+        let line = lines[i];
+
+        // Manual word search (indexOf with 2 args is broken in oitec)
+        let searchFrom = 0;
+        while (searchFrom <= line.length - word.length) {
+            let found = -1;
+            for (let j = searchFrom; j <= line.length - word.length; j = j + 1) {
+                let match = true;
+                for (let k = 0; k < word.length; k = k + 1) {
+                    if (line[j + k] != word[k]) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) {
+                    found = j;
+                    break;
+                }
+            }
+
+            if (found < 0) break;
+
+            // Check word boundaries
+            let validStart = true;
+            let validEnd = true;
+
+            if (found > 0) {
+                let before = line[found - 1];
+                if (isIdentChar(before)) {
+                    validStart = false;
+                }
+            }
+
+            let afterIdx = found + word.length;
+            if (afterIdx < line.length) {
+                let after = line[afterIdx];
+                if (isIdentChar(after)) {
+                    validEnd = false;
+                }
+            }
+
+            if (validStart && validEnd) {
+                edits.push({
+                    range: {
+                        start: { line: i, character: found },
+                        end: { line: i, character: found + word.length }
+                    },
+                    newText: newName
+                });
+            }
+
+            searchFrom = found + word.length;
+        }
+    }
+
+    return edits;
+}
+
+/**
+ * Check if a character is part of an identifier.
+ */
+function isIdentChar(c: string): boolean {
+    return (c >= "a" && c <= "z") ||
+           (c >= "A" && c <= "Z") ||
+           (c >= "0" && c <= "9") ||
+           c == "_" || c == "$";
+}
+
+/**
+ * Find the start column of the word at a given character position.
+ */
+function findWordStart(lineText: string, character: number): number {
+    let start = character;
+    while (start > 0) {
+        let c = lineText[start - 1];
+        if (isIdentChar(c)) {
+            start = start - 1;
+        } else {
+            break;
+        }
+    }
+    return start;
+}
+
+/**
+ * Check if a word is a language keyword (should not be renamed).
+ */
+function isKeyword(word: string): boolean {
+    if (word == "let") return true;
+    if (word == "const") return true;
+    if (word == "function") return true;
+    if (word == "class") return true;
+    if (word == "interface") return true;
+    if (word == "import") return true;
+    if (word == "export") return true;
+    if (word == "from") return true;
+    if (word == "if") return true;
+    if (word == "else") return true;
+    if (word == "for") return true;
+    if (word == "while") return true;
+    if (word == "return") return true;
+    if (word == "new") return true;
+    if (word == "true") return true;
+    if (word == "false") return true;
+    if (word == "null") return true;
+    if (word == "undefined") return true;
+    if (word == "typeof") return true;
+    if (word == "instanceof") return true;
+    if (word == "void") return true;
+    if (word == "break") return true;
+    if (word == "continue") return true;
+    if (word == "switch") return true;
+    if (word == "case") return true;
+    if (word == "default") return true;
+    if (word == "try") return true;
+    if (word == "catch") return true;
+    if (word == "finally") return true;
+    if (word == "throw") return true;
+    if (word == "async") return true;
+    if (word == "await") return true;
+    if (word == "of") return true;
+    if (word == "in") return true;
+    if (word == "declare") return true;
+    if (word == "type") return true;
+    if (word == "extends") return true;
+    if (word == "implements") return true;
+    if (word == "this") return true;
+    if (word == "super") return true;
+    return false;
+}
+
+export { handleRename, handlePrepareRename };

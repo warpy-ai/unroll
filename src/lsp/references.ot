@@ -1,0 +1,177 @@
+// LSP Find References Handler
+// Finds all usages of a symbol across open documents and on disk via imports.
+
+import { sendResponse } from "./transport.ot";
+import { DocumentStore, uriToPath, pathToUri } from "./documents.ot";
+import { SymbolIndex, getWordAtPosition } from "./symbols.ot";
+
+/**
+ * Handle textDocument/references request.
+ * Returns Location[] of all references to the symbol at the cursor.
+ */
+function handleReferences(id: any, params: any, documents: DocumentStore, symbols: SymbolIndex, workspaceRoot: string): void {
+    let uri = params.textDocument.uri;
+    let line = params.position.line;
+    let character = params.position.character;
+
+    let content = documents.get(uri);
+    if (content == null) {
+        sendResponse(id, []);
+        return;
+    }
+
+    let word = getWordAtPosition(content, line, character);
+    if (word == "") {
+        sendResponse(id, []);
+        return;
+    }
+
+    let locations: any[] = [];
+
+    // 1. Search all open documents
+    let allUris = documents.getAllUris();
+    for (let ui = 0; ui < allUris.length; ui = ui + 1) {
+        let docUri = allUris[ui];
+        let docContent = documents.get(docUri);
+        if (docContent != null) {
+            findWordInContent(word, docContent, docUri, locations);
+        }
+    }
+
+    // 2. Search workspace files not currently open
+    if (workspaceRoot != "") {
+        let files: string[] = [];
+        discoverOtFiles(workspaceRoot, files);
+
+        for (let fi = 0; fi < files.length; fi = fi + 1) {
+            let filePath = files[fi];
+            let fileUri = pathToUri(filePath);
+            // Skip if already searched (open document)
+            if (documents.get(fileUri) != null) {
+                continue;
+            }
+
+            if (fs.existsSync(filePath)) {
+                let fileContent = fs.readFileSync(filePath);
+                if (fileContent != null) {
+                    findWordInContent(word, fileContent, fileUri, locations);
+                }
+            }
+        }
+    }
+
+    sendResponse(id, locations);
+}
+
+/**
+ * Find all occurrences of a word in content and add to locations.
+ */
+function findWordInContent(word: string, content: string, uri: string, locations: any[]): void {
+    let lines = content.split("\n");
+
+    for (let i = 0; i < lines.length; i = i + 1) {
+        let line = lines[i];
+        let col = 0;
+
+        while (col < line.length) {
+            let idx = line.indexOf(word, col);
+            if (idx < 0) break;
+
+            // WORKAROUND: oitec indexOf with 2 args is broken, use substring approach
+            // This is handled below with manual search
+            break;
+        }
+
+        // Manual word search since indexOf(str, startPos) is broken
+        let searchFrom = 0;
+        while (searchFrom <= line.length - word.length) {
+            let found = -1;
+            // Find next occurrence
+            for (let j = searchFrom; j <= line.length - word.length; j = j + 1) {
+                let match = true;
+                for (let k = 0; k < word.length; k = k + 1) {
+                    if (line[j + k] != word[k]) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) {
+                    found = j;
+                    break;
+                }
+            }
+
+            if (found < 0) break;
+
+            // Check word boundaries
+            let validStart = true;
+            let validEnd = true;
+
+            if (found > 0) {
+                let before = line[found - 1];
+                if (isIdentChar(before)) {
+                    validStart = false;
+                }
+            }
+
+            let afterIdx = found + word.length;
+            if (afterIdx < line.length) {
+                let after = line[afterIdx];
+                if (isIdentChar(after)) {
+                    validEnd = false;
+                }
+            }
+
+            if (validStart && validEnd) {
+                locations.push({
+                    uri: uri,
+                    range: {
+                        start: { line: i, character: found },
+                        end: { line: i, character: found + word.length }
+                    }
+                });
+            }
+
+            searchFrom = found + word.length;
+        }
+    }
+}
+
+/**
+ * Check if a character is part of an identifier.
+ */
+function isIdentChar(c: string): boolean {
+    return (c >= "a" && c <= "z") ||
+           (c >= "A" && c <= "Z") ||
+           (c >= "0" && c <= "9") ||
+           c == "_" || c == "$";
+}
+
+/**
+ * Recursively discover all .ot files in a directory.
+ */
+function discoverOtFiles(dir: string, files: string[]): void {
+    if (!fs.existsSync(dir)) {
+        return;
+    }
+
+    let entries = fs.readdirSync(dir);
+    for (let ei = 0; ei < entries.length; ei = ei + 1) {
+        let entry = entries[ei];
+        // Skip hidden dirs and node_modules
+        if (entry.startsWith(".") || entry == "node_modules") {
+            continue;
+        }
+
+        let fullPath = dir + "/" + entry;
+        let stats = fs.statSync(fullPath);
+
+        if (stats && stats.isDirectory && stats.isDirectory()) {
+            discoverOtFiles(fullPath, files);
+        } else if (entry.length > 3 && entry.substring(entry.length - 3) == ".ot") {
+            files.push(fullPath);
+        }
+    }
+}
+
+export { handleReferences, discoverOtFiles };

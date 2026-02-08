@@ -10,6 +10,10 @@ import { handleCompletion } from "./completion.ot";
 import { handleHover } from "./hover.ot";
 import { handleDefinition } from "./definition.ot";
 import { handleDocumentSymbol } from "./document_symbols.ot";
+import { handleReferences } from "./references.ot";
+import { handleSignatureHelp } from "./signature_help.ot";
+import { handleWorkspaceSymbol } from "./workspace_symbols.ot";
+import { handleRename, handlePrepareRename } from "./rename.ot";
 
 /**
  * Run the LSP server. Blocks reading from stdin until shutdown/EOF.
@@ -19,6 +23,7 @@ function runLsp(args: string[]): number {
     let symbols = new SymbolIndex();
     let initialized = false;
     let shutdownRequested = false;
+    let workspaceRoot = "";
 
     // Log to stderr (stdout is reserved for LSP protocol)
     console.error("Oite LSP server starting...");
@@ -41,13 +46,14 @@ function runLsp(args: string[]): number {
 
         // Lifecycle
         if (method == "initialize") {
+            workspaceRoot = extractWorkspaceRoot(params);
             handleInitialize(id, params);
             continue;
         }
 
         if (method == "initialized") {
             initialized = true;
-            console.error("Oite LSP server initialized");
+            console.error("Oite LSP server initialized (workspace: " + workspaceRoot + ")");
             continue;
         }
 
@@ -106,6 +112,31 @@ function runLsp(args: string[]): number {
             continue;
         }
 
+        if (method == "textDocument/references") {
+            handleReferences(id, params, documents, symbols, workspaceRoot);
+            continue;
+        }
+
+        if (method == "textDocument/signatureHelp") {
+            handleSignatureHelp(id, params, documents, symbols);
+            continue;
+        }
+
+        if (method == "workspace/symbol") {
+            handleWorkspaceSymbol(id, params, documents, symbols, workspaceRoot);
+            continue;
+        }
+
+        if (method == "textDocument/prepareRename") {
+            handlePrepareRename(id, params, documents, symbols);
+            continue;
+        }
+
+        if (method == "textDocument/rename") {
+            handleRename(id, params, documents, symbols, workspaceRoot);
+            continue;
+        }
+
         // Unknown request — respond with method not found
         if (id != null) {
             sendError(id, -32601, "Method not found: " + method);
@@ -129,7 +160,15 @@ function handleInitialize(id: any, params: any): void {
             },
             hoverProvider: true,
             definitionProvider: true,
-            documentSymbolProvider: true
+            documentSymbolProvider: true,
+            referencesProvider: true,
+            signatureHelpProvider: {
+                triggerCharacters: ["(", ","]
+            },
+            workspaceSymbolProvider: true,
+            renameProvider: {
+                prepareProvider: true
+            }
         },
         serverInfo: {
             name: "oite-lsp",
@@ -138,6 +177,31 @@ function handleInitialize(id: any, params: any): void {
     };
 
     sendResponse(id, result);
+}
+
+/**
+ * Extract workspace root path from initialize params.
+ */
+function extractWorkspaceRoot(params: any): string {
+    // Try rootUri first (preferred)
+    if (params.rootUri != null && params.rootUri != "") {
+        return uriToPath(params.rootUri);
+    }
+
+    // Fall back to rootPath (deprecated but still used)
+    if (params.rootPath != null && params.rootPath != "") {
+        return params.rootPath;
+    }
+
+    // Try workspaceFolders
+    if (params.workspaceFolders != null && params.workspaceFolders.length > 0) {
+        let first = params.workspaceFolders[0];
+        if (first.uri != null) {
+            return uriToPath(first.uri);
+        }
+    }
+
+    return "";
 }
 
 // ============================================================================
